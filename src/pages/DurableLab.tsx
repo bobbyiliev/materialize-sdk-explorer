@@ -1,6 +1,14 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { Code } from "../components/Code";
-import { BatchPath, GenerationStages, HistoryWindow, Ownership, WriteInspector } from "../components/DurableViz";
+import {
+  BatchPath,
+  FreshnessChart,
+  GenerationStages,
+  HistoryWindow,
+  Pipeline,
+  WriteInspector,
+  type FreshnessSample,
+} from "../components/DurableViz";
 import { Term, Ts } from "../components/Term";
 import { useFollow } from "../components/Wire";
 import type { Checkpoint } from "../core/sdk";
@@ -15,6 +23,8 @@ interface Lab {
   server: SimMaterialize;
   target: SimTarget;
   workers: DurableWorker[];
+  samples: FreshnessSample[];
+  statuses: Map<string, string>;
 }
 
 function newLab(kind: SinkKind): Lab {
@@ -22,6 +32,8 @@ function newLab(kind: SinkKind): Lab {
     server: new SimMaterialize([["apple", 3], ["pear", 5]]),
     target: new SimTarget(kind),
     workers: [],
+    samples: [],
+    statuses: new Map(),
   };
 }
 
@@ -33,9 +45,35 @@ export function DurableLab() {
   const done = useRef<boolean[]>([]);
   const { server, target, workers } = lab.current;
 
+  /** Samples the target's freshness, labeled with any worker whose status changed. */
+  const record = () => {
+    const l = lab.current;
+    const changes: string[] = [];
+    for (const w of l.workers) {
+      const status = w.status === "starting" || w.status === "reconnecting" ? "starts" : w.status;
+      const before = l.statuses.get(w.name);
+      if (before !== status) {
+        if (before === undefined) changes.push(`${w.name} ${status === "streaming" ? "starts" : status}`);
+        else if (status !== "streaming") changes.push(`${w.name} ${status}`);
+        l.statuses.set(w.name, status);
+      }
+    }
+    const text = l.target.checkpoint;
+    const frontier = text ? (JSON.parse(text) as Checkpoint).frontier : null;
+    l.samples = [
+      ...l.samples,
+      {
+        at: l.server.now,
+        lagMs: frontier ? Number(l.server.now + 1n - BigInt(frontier)) : null,
+        label: changes.join(", ") || undefined,
+      },
+    ].slice(-120);
+  };
+
   const tickOnce = (ms = 1000n) => {
     lab.current.server.tick(ms);
     for (const w of lab.current.workers) if (w.running) w.step();
+    record();
   };
   const ticks = (n: number) => {
     for (let i = 0; i < n; i++) tickOnce();
@@ -66,6 +104,7 @@ export function DurableLab() {
 
   const act = (f: () => void) => {
     f();
+    record();
     force();
   };
 
@@ -215,8 +254,15 @@ export function DurableLab() {
         </div>
       </div>
 
-      <div className="grid three" style={{ marginTop: 16, alignItems: "stretch" }}>
-        <Ownership workers={workers} checkpoint={checkpoint} />
+      <div style={{ marginTop: 16 }}>
+        <Pipeline server={server} target={target} workers={workers} checkpoint={checkpoint} />
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <FreshnessChart samples={lab.current.samples} />
+      </div>
+
+      <div className="grid two" style={{ marginTop: 16, alignItems: "stretch" }}>
         <HistoryWindow server={server} checkpoint={checkpoint} />
         <BatchPath kind={kind} />
       </div>

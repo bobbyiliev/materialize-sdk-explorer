@@ -3,43 +3,6 @@ import type { CheckpointAttempt, DurableWorker, SimTarget, SinkKind } from "../s
 import type { SimMaterialize } from "../sim/materialize";
 import { Term, Ts } from "./Term";
 
-/** Which worker owns the checkpoint, and which ones will find out they do not. */
-export function Ownership({ workers, checkpoint }: { workers: DurableWorker[]; checkpoint: Checkpoint | null }) {
-  const stored = checkpoint ? BigInt(checkpoint.epoch) : null;
-  return (
-    <div className="card viz">
-      <h3>
-        Who owns the <Term name="checkpoint" />
-      </h3>
-      <div className="small muted">
-        Stored <Term name="epoch" />: <strong className="mono">{checkpoint?.epoch ?? "none"}</strong>
-      </div>
-      <div className="owners">
-        {workers.length === 0 && <div className="empty">No workers yet.</div>}
-        {workers.map((w) => {
-          const epoch = w.epoch ? BigInt(w.epoch) : null;
-          const owner = w.running && epoch !== null && epoch === stored;
-          const stale = w.running && epoch !== null && stored !== null && epoch < stored;
-          const label = owner
-            ? "owner"
-            : stale
-              ? "stale: fenced at its next checkpoint write"
-              : w.status === "fenced"
-                ? "fenced"
-                : w.status;
-          return (
-            <div key={w.name} className={`owner ${owner ? "is-owner" : stale ? "is-stale" : w.running ? "" : "is-down"}`}>
-              <span className="owner-name">{w.name}</span>
-              <span className="mono small">epoch {w.epoch ?? "–"}</span>
-              <span className="small">{label}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 /** The readable history, and where the next resume needs to read from. */
 export function HistoryWindow({ server, checkpoint }: { server: SimMaterialize; checkpoint: Checkpoint | null }) {
   const now = server.now;
@@ -220,4 +183,247 @@ export function WriteInspector({ attempt }: { attempt: CheckpointAttempt | null 
 
 function short(v: string): string {
   return /^\d{9,}$/.test(v) ? `…${v.slice(-5)}` : v;
+}
+
+const NODE_W = 230;
+const NODE_H = 84;
+const COL_X = [0, 320, 640];
+const ROW = 104;
+
+type Tone = "ok" | "warn" | "bad" | "idle" | "info";
+
+interface NodeProps {
+  x: number;
+  y: number;
+  kind: string;
+  namespace: string;
+  name: string;
+  status: string;
+  detail: string;
+  tone: Tone;
+}
+
+function GraphNode({ x, y, kind, namespace, name, status, detail, tone }: NodeProps) {
+  return (
+    <div className="gnode" style={{ left: x, top: y, width: NODE_W }}>
+      <div className="gnode-body">
+        <span className="gnode-icon">{kind}</span>
+        <span className="gnode-text">
+          <span className="gnode-ns">{namespace}</span>
+          <span className="gnode-name">{name}</span>
+        </span>
+      </div>
+      <div className={`gnode-status tone-${tone}`}>
+        <span>{status}</span>
+        <span>{detail}</span>
+      </div>
+    </div>
+  );
+}
+
+const seconds = (ms: bigint) => `${(Number(ms) / 1000).toFixed(1)} s`;
+
+/**
+ * The lab as a dataflow graph, drawn like the Console's workflow graph: the
+ * table, every worker, and the target, with flowing edges for the workers that
+ * are streaming.
+ */
+export function Pipeline({
+  server,
+  target,
+  workers,
+  checkpoint,
+}: {
+  server: SimMaterialize;
+  target: SimTarget;
+  workers: DurableWorker[];
+  checkpoint: Checkpoint | null;
+}) {
+  const shown = workers.slice(-4);
+  const rows = Math.max(shown.length, 1);
+  const height = rows * ROW + 8;
+  const mid = (height - NODE_H) / 2;
+  const stored = checkpoint ? BigInt(checkpoint.epoch) : null;
+  const lag = checkpoint?.frontier ? server.now + 1n - BigInt(checkpoint.frontier) : null;
+  const targetTone: Tone = lag === null ? "idle" : lag <= 3500n ? "ok" : "warn";
+  const width = COL_X[2] + NODE_W;
+
+  const edge = (x1: number, y1: number, x2: number, y2: number, cls: string, key: string) => {
+    const mx = (x1 + x2) / 2;
+    return (
+      <path
+        key={key}
+        d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`}
+        className={`gedge ${cls}`}
+        markerEnd={`url(#gdot-${cls.includes("flow") ? "on" : "off"})`}
+      />
+    );
+  };
+
+  return (
+    <div className="card viz pipeline-card">
+      <h3>The pipeline</h3>
+      <div className="pipeline-scroll">
+        <div className="pipeline" style={{ width, height }}>
+          <svg width={width} height={height} className="gedges" aria-hidden="true">
+            <defs>
+              <marker id="gdot-on" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6">
+                <circle cx="5" cy="5" r="4" className="gdot on" />
+              </marker>
+              <marker id="gdot-off" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6">
+                <circle cx="5" cy="5" r="4" className="gdot" />
+              </marker>
+            </defs>
+            {shown.map((w, i) => {
+              const y = i * ROW + NODE_H / 2;
+              const epoch = w.epoch ? BigInt(w.epoch) : null;
+              const stale = w.running && epoch !== null && stored !== null && epoch < stored;
+              const flowing = w.status === "streaming";
+              const cls = flowing ? (stale ? "flow stale" : "flow") : "";
+              return [
+                edge(NODE_W, mid + NODE_H / 2, COL_X[1], y, cls, `in-${w.name}`),
+                edge(COL_X[1] + NODE_W, y, COL_X[2], mid + NODE_H / 2, cls, `out-${w.name}`),
+              ];
+            })}
+          </svg>
+          <GraphNode
+            x={COL_X[0]}
+            y={mid}
+            kind="T"
+            namespace="materialize.public"
+            name="orders"
+            status="SUBSCRIBE by id"
+            detail="u42"
+            tone="info"
+          />
+          {shown.length === 0 && (
+            <div className="gnode-empty" style={{ left: COL_X[1], top: mid, width: NODE_W, height: NODE_H }}>
+              no workers yet
+            </div>
+          )}
+          {shown.map((w, i) => {
+            const epoch = w.epoch ? BigInt(w.epoch) : null;
+            const owner = w.running && epoch !== null && epoch === stored;
+            const stale = w.running && epoch !== null && stored !== null && epoch < stored;
+            const tone: Tone = owner && w.status === "streaming" ? "ok" : stale ? "warn" : w.running ? "info" : w.status === "crashed" ? "idle" : "bad";
+            const status = owner ? "owner" : stale ? "stale" : w.status;
+            return (
+              <GraphNode
+                key={w.name}
+                x={COL_X[1]}
+                y={i * ROW}
+                kind="W"
+                namespace="DurableSink worker"
+                name={`Worker ${w.name}`}
+                status={status}
+                detail={w.epoch ? `epoch ${w.epoch}` : ""}
+                tone={tone}
+              />
+            );
+          })}
+          <GraphNode
+            x={COL_X[2]}
+            y={mid}
+            kind={target.kind === "transactional" ? "P" : "N"}
+            namespace={target.kind === "transactional" ? "Postgres" : "turbopuffer"}
+            name={target.kind === "transactional" ? "mz_rows + mz_checkpoints" : `orders__i${checkpoint?.generation ?? "?"}`}
+            status="Freshness"
+            detail={lag === null ? "no commit yet" : seconds(lag)}
+            tone={targetTone}
+          />
+        </div>
+      </div>
+      {workers.length > 4 && <p className="small muted">Showing the 4 newest workers.</p>}
+    </div>
+  );
+}
+
+export interface FreshnessSample {
+  at: bigint;
+  lagMs: number | null;
+  label?: string;
+}
+
+/**
+ * How far the target's committed frontier trails Materialize's clock, drawn
+ * like the Console's freshness graph.
+ */
+export function FreshnessChart({ samples }: { samples: FreshnessSample[] }) {
+  const W = 1000;
+  const H = 200;
+  const L = 40;
+  const B = 24;
+  const T = 40;
+  const points = samples.slice(-80);
+  if (points.length < 2) {
+    return (
+      <div className="card viz">
+        <h3>Freshness of the target</h3>
+        <div className="empty">Start a worker and let time pass.</div>
+      </div>
+    );
+  }
+  const t0 = points[0].at;
+  const t1 = points[points.length - 1].at;
+  const span = Math.max(1, Number(t1 - t0));
+  const maxLag = Math.max(4000, ...points.map((p) => p.lagMs ?? 0));
+  const step = Math.max(1000, Math.ceil((maxLag * 1.15) / 4000) * 1000);
+  const yMax = step * 4;
+  const x = (at: bigint) => L + (Number(at - t0) / span) * (W - L - 8);
+  const y = (lag: number) => T + (1 - lag / yMax) * (H - T - B);
+  const segments: string[] = [];
+  let current = "";
+  for (const p of points) {
+    if (p.lagMs === null) {
+      if (current) segments.push(current);
+      current = "";
+      continue;
+    }
+    current += `${current ? "L" : "M"}${x(p.at).toFixed(1)},${y(p.lagMs).toFixed(1)} `;
+  }
+  if (current) segments.push(current);
+  const ticks = [0, 1, 2, 3, 4].map((k) => k * step);
+  const labels = points.filter((p) => p.label).slice(-5);
+  const last = points[points.length - 1];
+  return (
+    <div className="card viz">
+      <h3>Freshness of the target</h3>
+      <div className="small muted">
+        How far the committed <Term name="frontier" /> trails Materialize's clock. Now:{" "}
+        <strong>{last.lagMs === null ? "no commit yet" : `${(last.lagMs / 1000).toFixed(1)} s`}</strong>
+      </div>
+      <div className="timeline-wrap">
+        <svg viewBox={`0 0 ${W} ${H}`} className="fchart" role="img" aria-label="Freshness over time">
+          {ticks.map((v) => (
+            <g key={v}>
+              <line x1={L} x2={W - 8} y1={y(v)} y2={y(v)} className="fgrid" />
+              <text x={L - 6} y={y(v) + 4} textAnchor="end" className="flabel">
+                {(v / 1000).toFixed(0)}s
+              </text>
+            </g>
+          ))}
+          {labels.map((p, i) => (
+            <g key={i}>
+              <line x1={x(p.at)} x2={x(p.at)} y1={T - 4} y2={H - B} className="fmark" />
+              <text
+                x={x(p.at)}
+                y={14 + (i % 2) * 14}
+                textAnchor={x(p.at) > W * 0.85 ? "end" : x(p.at) < L + 60 ? "start" : "middle"}
+                className="fmark-label"
+              >
+                {p.label}
+              </text>
+            </g>
+          ))}
+          {segments.map((d, i) => (
+            <path key={i} d={d} className="fline" />
+          ))}
+          {last.lagMs !== null && <circle cx={x(last.at)} cy={y(last.lagMs)} r={4} className="fdot" />}
+          <text x={W - 8} y={H - 6} textAnchor="end" className="flabel">
+            time →
+          </text>
+        </svg>
+      </div>
+    </div>
+  );
 }
