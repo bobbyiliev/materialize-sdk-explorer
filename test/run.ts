@@ -9,6 +9,7 @@ import { initSync } from "../src/core/wasm/sdk_core.js";
 import { conformance, type SdkEvent } from "../src/core/sdk";
 import { DurableWorker, SimTarget, setup } from "../src/sim/durable";
 import { LiveRunner } from "../src/sim/live";
+import { narrate } from "../src/sim/narrate";
 import { SimMaterialize } from "../src/sim/materialize";
 
 const root = process.env.ROOT!;
@@ -55,6 +56,21 @@ test("a FETCH without a progress row releases nothing", () => {
   assert.equal(batches(live.step()).length, 0);
   const [batch] = batches(live.step());
   assert.ok(batch.event === "batch" && batch.updates.length === 3);
+});
+
+test("a snapshot larger than one FETCH is held, narrated as held, then released whole", () => {
+  const server = new SimMaterialize([["a", 1], ["b", 2], ["c", 3], ["d", 4], ["e", 5]]);
+  const live = new LiveRunner(server, { kind: "diff" }, 2);
+  live.open();
+  assert.equal(batches(live.step()).length, 0);
+  assert.ok(live.held > 0);
+  const lines = narrate(live.state.wire, [], { held: live.held, frontier: live.state.frontier });
+  assert.ok(lines.some((l) => l.includes("No progress row closes them yet")), lines.join("\n"));
+  assert.ok(lines.some((l) => l.startsWith(`The core holds ${live.held} change`)), lines.join("\n"));
+  live.stepWhileHeld();
+  const [snapshot] = batches(live.state.events);
+  assert.ok(snapshot.event === "batch" && snapshot.snapshot && snapshot.updates.length === 5);
+  assert.equal(live.held, 0);
 });
 
 test("a resume after a dropped connection repeats nothing and misses nothing", () => {

@@ -158,10 +158,10 @@ export class DurableWorker {
     return this.current?.epoch ?? null;
   }
 
-  crash(): void {
+  crash(text = "Crashed. The checkpoint stays where the last commit left it."): void {
     this.closeStream();
     this.status = "crashed";
-    this.say({ text: "Crashed. The checkpoint stays where the last commit left it.", tone: "bad" });
+    this.say({ text, tone: "bad" });
   }
 
   private start(): void {
@@ -263,8 +263,7 @@ export class DurableWorker {
       // The batch and its checkpoint commit in one transaction, or neither does.
       if (this.crashBeforeCheckpoint) {
         this.crashBeforeCheckpoint = false;
-        this.say({ text: "Crashed in the middle of the transaction. It rolls back, so neither the batch nor the checkpoint landed.", tone: "bad" });
-        this.crash();
+        this.crash("Crashed in the middle of the transaction. It rolls back, so neither the batch nor the checkpoint landed.");
         return false;
       }
       if (!this.target.writeCheckpoint(write, this.name)) return this.refused(write, event.upper);
@@ -286,11 +285,9 @@ export class DurableWorker {
       }
       if (this.crashBeforeCheckpoint) {
         this.crashBeforeCheckpoint = false;
-        this.say({
-          text: `Crashed after the batch landed and before its checkpoint. The checkpoint still says ${t(this.current!.frontier)}, so the next worker sends these changes again.`,
-          tone: "bad",
-        });
-        this.crash();
+        this.crash(
+          `Crashed after the batch landed and before its checkpoint. The checkpoint still says ${t(this.current!.frontier)}, so the next worker sends these changes again.`,
+        );
         return false;
       }
       if (!this.target.writeCheckpoint(write, this.name)) return this.refused(write, event.upper);

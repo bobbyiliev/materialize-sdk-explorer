@@ -1314,6 +1314,126 @@ svg.timeline {
   vertical-align: 1px;
 }
 
+/* Lab console: every control of a lab, next to what the last action did. It
+   stays on screen while the results below it scroll, so a click and its effect
+   are always visible together. */
+
+.lab-console {
+  position: sticky;
+  top: 8px;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-2);
+}
+
+.console-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.console-row + .console-row {
+  margin-top: 8px;
+}
+
+.console-label {
+  flex: none;
+  width: 60px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.lab-console .btn {
+  padding: 5px 9px;
+  font-size: 13px;
+}
+
+.lab-console .segmented button {
+  font-size: 13px;
+}
+
+/* Sized by the controls beside it, not by its text, so a long explanation
+   scrolls inside the box instead of making the sticky console taller. */
+.lab-console .narration {
+  contain: size;
+  min-height: 176px;
+  overflow: auto;
+  padding: 10px 14px;
+}
+
+.lab-console .narration h3,
+.lab-console .narration li,
+.lab-console .narration p {
+  font-size: 0.85rem;
+}
+
+@media (max-width: 1240px) {
+  .lab-console {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lab-console .narration {
+    contain: none;
+    min-height: 0;
+    max-height: 160px;
+  }
+}
+
+/* On a phone or a short screen a sticky console would cover the results. */
+@media (max-width: 900px), (max-height: 720px) {
+  .lab-console {
+    position: static;
+  }
+}
+
+.tryit.rows li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0 7px 34px;
+  border-top: 1px solid var(--border);
+}
+
+.tryit.rows li:first-child {
+  border-top: 0;
+}
+
+.tryit.rows li::before {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.tryit.rows li .show-me {
+  margin-left: auto;
+  flex: none;
+}
+
+.tryit.rows li.next {
+  font-weight: 500;
+}
+
+.tryit.rows li.next::before {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.case-row.picked {
+  margin: 0 -6px;
+  padding: 4px 6px;
+  background: var(--accent-soft);
+  border-radius: 6px;
+}
+
 /* Durable lab visuals */
 
 .viz h3 {

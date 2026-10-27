@@ -59,6 +59,8 @@ const ACTIONS: Record<string, string> = {
 
 const CHANGES = ["unchanged", "dropped", "schema_changed", "replaced", "swapped"] as const;
 
+const OUTCOME_LABELS: Record<string, string> = { replaced: "Replaced in place", swapped: "Swapped" };
+
 const OUTCOMES: Record<string, string> = {
   replaced:
     "The object was replaced in place (same storage, new catalog id). Check the retention again, then resume, and record the new id in the checkpoint.",
@@ -70,6 +72,11 @@ export function Errors() {
   const [input, setInput] = useState<Preset["input"]>(PRESETS[12].input);
   const [indexed, setIndexed] = useState(false);
   const [change, setChange] = useState<(typeof CHANGES)[number]>("unchanged");
+  const pick = (next: Preset["input"]) => {
+    setInput(next);
+    setIndexed(false);
+    setChange("unchanged");
+  };
   let result: Classification | null = null;
   let error: string | null = null;
   try {
@@ -137,7 +144,7 @@ export function Errors() {
         <span className="ep-arrow">→</span>
         <div className="ep-step ep-kind">
           <small>kind</small>
-          <strong>{finalKind ? KINDS[finalKind]?.label ?? finalKind : outcome ?? "?"}</strong>
+          <strong>{finalKind ? KINDS[finalKind]?.label ?? finalKind : outcome ? OUTCOME_LABELS[outcome] ?? outcome : "?"}</strong>
         </div>
         <span className="ep-arrow">→</span>
         <div className={`ep-step ${next.startsWith("resume") || next.startsWith("reconnect") || next.startsWith("check") ? "ep-ok" : "ep-stop"}`}>
@@ -173,9 +180,9 @@ export function Errors() {
           <h3>Real cases from the conformance tests</h3>
           <div className="card" style={{ padding: "6px 14px", maxHeight: 420, overflow: "auto" }}>
             {PRESETS.map((p) => (
-              <div className="case-row" key={p.name}>
-                <button type="button" className="btn small" onClick={() => setInput(p.input)}>
-                  use
+              <div className={`case-row ${sameInput(p.input, input) ? "picked" : ""}`} key={p.name}>
+                <button type="button" className="btn small" onClick={() => pick(p.input)}>
+                  {sameInput(p.input, input) ? "shown" : "use"}
                 </button>
                 <span>
                   <span className="mono small">{p.input.sqlstate ?? "none"}</span> · {p.name}
@@ -231,7 +238,9 @@ export function Errors() {
           {(finalKind || outcome) && (
             <div className="card" style={{ marginTop: 12 }}>
               <div className="small muted">So it is</div>
-              <h3 style={{ margin: "2px 0 8px" }}>{finalKind ? KINDS[finalKind]?.label ?? finalKind : outcome}</h3>
+              <h3 style={{ margin: "2px 0 8px" }}>
+                {finalKind ? KINDS[finalKind]?.label ?? finalKind : OUTCOME_LABELS[outcome!] ?? outcome}
+              </h3>
               <p className="small" style={{ margin: 0 }}>
                 <strong>A durable sink:</strong> {finalKind ? KINDS[finalKind]?.does : OUTCOMES[outcome!]}
               </p>
@@ -261,4 +270,8 @@ export function Errors() {
       <Code code={code.code} title={code.path} href={code.url} maxHeight={560} />
     </>
   );
+}
+
+function sameInput(a: Preset["input"], b: Preset["input"]): boolean {
+  return a.sqlstate === b.sqlstate && a.message === b.message && a.phase === b.phase;
 }

@@ -89,6 +89,27 @@ export class LiveRunner {
     return events;
   }
 
+  /**
+   * One FETCH, then more while the core holds changes no progress row has
+   * closed, as a consumer waiting for its next event would. With a small
+   * `maxRows`, a snapshot takes several.
+   */
+  stepWhileHeld(limit = 10): void {
+    this.step();
+    for (let i = 1; i < limit && this.held > 0 && !this.state.failed; i++) this.step();
+  }
+
+  /** Changes since the stream's last progress row, which the core holds until one arrives. */
+  get held(): number {
+    let held = 0;
+    for (const entry of this.state.wire) {
+      if (entry.dir === "out" && entry.sql.startsWith("DECLARE")) held = 0;
+      if (entry.dir !== "in") continue;
+      for (const row of entry.rows) held = row[1] === "t" ? 0 : held + 1;
+    }
+    return held;
+  }
+
   /** What the core makes of an error the server could return now. */
   classifyNow(sqlstate: string | null, message: string): Classification | null {
     return this.sub ? this.sub.classify(sqlstate, message) : null;

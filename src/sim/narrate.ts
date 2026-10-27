@@ -6,7 +6,14 @@ import type { WireEntry } from "./live";
 
 const short = (ts: string) => `…${ts.slice(-5)}`;
 
-export function narrate(wire: WireEntry[], events: SdkEvent[]): string[] {
+export interface NarrateContext {
+  /** Changes the core still holds after the action, waiting for a progress row. */
+  held: number;
+  /** Where a resume would start, if a batch was ever released. */
+  frontier: string | null;
+}
+
+export function narrate(wire: WireEntry[], events: SdkEvent[], ctx: NarrateContext): string[] {
   const out: string[] = [];
   // The first rows after a DECLARE start with the progress row at the AS OF.
   const declared = wire.findIndex((e) => e.dir === "out" && e.sql.startsWith("DECLARE"));
@@ -14,6 +21,7 @@ export function narrate(wire: WireEntry[], events: SdkEvent[]): string[] {
   const resumedAt = wire
     .map((e) => (e.dir === "out" ? /SNAPSHOT = false\) AS OF (\d+)/.exec(e.sql)?.[1] : undefined))
     .find((x) => x !== undefined);
+  let lastHeld = -1;
   for (const entry of wire) {
     if (entry.dir === "out") {
       if (entry.sql.startsWith("DECLARE")) {
@@ -34,26 +42,48 @@ export function narrate(wire: WireEntry[], events: SdkEvent[]): string[] {
       if (entry.rows.length === 0) {
         out.push("Materialize had nothing new yet, so the FETCH came back empty.");
       } else if (progress.length === 0) {
-        out.push(
-          `Materialize returned ${changes} change${changes === 1 ? "" : "s"} and no progress row. More changes at the same time could still come, so the core holds them, and your code gets nothing yet.`,
-        );
-      } else if (entry.rows[0][1] === "t" && progress.length > 1 && entry === firstIn) {
+        // Consecutive FETCHes that each end without a progress row read as one step.
+        const prev = out.at(-1);
+        const held = prev === undefined ? null : /^(?:Materialize|The next (\d+) FETCHes) returned (\d+) changes? and no progress row/.exec(prev);
+        if (held && lastHeld === out.length - 1) {
+          const fetches = held[1] ? Number(held[1]) + 1 : 2;
+          const total = Number(held[2]) + changes;
+          out[out.length - 1] = `The next ${fetches} FETCHes returned ${total} changes and no progress row, so the core kept holding them.`;
+        } else {
+          out.push(
+            `Materialize returned ${changes} change${changes === 1 ? "" : "s"} and no progress row. More changes at the same time could still come, so the core holds them, and your code gets nothing yet.`,
+          );
+        }
+        lastHeld = out.length - 1;
+      } else if (entry === firstIn && entry.rows[0][1] === "t") {
+        const closed = progress.length > 1;
         const what =
           resumedAt === undefined
             ? `${changes} row${changes === 1 ? "" : "s"} at that time`
             : `${changes} change${changes === 1 ? "" : "s"} made after it`;
         out.push(
-          `Materialize returned a first progress row at the AS OF ${short(entry.rows[0][0]!)}, where the stream starts, then ${what}, then a progress row at ${short(progress.at(-1)![0]!)} that closes them.`,
+          closed && changes === 0 && resumedAt !== undefined
+            ? `Materialize returned a first progress row at the AS OF ${short(entry.rows[0][0]!)}, then one at ${short(progress.at(-1)![0]!)}, the old frontier. Nothing changed since the drop, so there is nothing to send again.`
+            : closed
+            ? `Materialize returned a first progress row at the AS OF ${short(entry.rows[0][0]!)}, where the stream starts, then ${what}, then a progress row at ${short(progress.at(-1)![0]!)} that closes them.`
+            : `Materialize returned a first progress row at the AS OF ${short(entry.rows[0][0]!)}, where the stream starts, then ${what}. No progress row closes them yet.`,
         );
       } else {
+        const lastProgress = entry.rows.map((r) => r[1]).lastIndexOf("t");
+        const trailing = entry.rows.length - 1 - lastProgress;
         out.push(
-          `Materialize returned ${changes} change${changes === 1 ? "" : "s"} and ${progress.length} progress row${progress.length === 1 ? "" : "s"}, the latest at ${short(progress.at(-1)![0]!)}. Everything before it has arrived.`,
+          `Materialize returned ${changes} change${changes === 1 ? "" : "s"} and ${progress.length} progress row${progress.length === 1 ? "" : "s"}, the latest at ${short(progress.at(-1)![0]!)}.` +
+            (trailing > 0
+              ? ` The ${trailing} change${trailing === 1 ? "" : "s"} after it wait${trailing === 1 ? "s" : ""} for the next progress row.`
+              : " Everything before it has arrived."),
         );
       }
     } else {
       out.push(
         entry.classification.action === "kind" && entry.classification.kind === "transient"
-          ? "The connection dropped. The core classifies the error as transient, so it is safe to resume."
+          ? ctx.frontier
+            ? `The connection dropped. The core classifies the error as transient, so it is safe to resume from the frontier ${short(ctx.frontier)}.`
+            : "The connection dropped. The core classifies the error as transient, but no batch was released yet, so there is no frontier to resume from. Start again with a snapshot."
           : `The stream failed. The core classifies the error as ${JSON.stringify(entry.classification)}.`,
       );
     }
@@ -85,6 +115,11 @@ export function narrate(wire: WireEntry[], events: SdkEvent[]): string[] {
           (keyed ? " In the upsert envelope, each key gets its latest value, or a delete." : ""),
       );
     }
+  }
+  if (ctx.held > 0 && wire.some((e) => e.dir === "in")) {
+    out.push(
+      `The core holds ${ctx.held} change${ctx.held === 1 ? "" : "s"} that no progress row has closed yet. FETCH again to read the rest.`,
+    );
   }
   return out;
 }
