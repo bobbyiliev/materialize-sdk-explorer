@@ -7,6 +7,7 @@ import { Decisions } from "./pages/Decisions";
 import { DurableLab } from "./pages/DurableLab";
 import { Errors } from "./pages/Errors";
 import { Evaluate } from "./pages/Evaluate";
+import { Glossary } from "./pages/Glossary";
 import { Languages } from "./pages/Languages";
 import { Overview } from "./pages/Overview";
 import { Problem } from "./pages/Problem";
@@ -33,6 +34,7 @@ export const ROUTES: Route[] = [
   { path: "languages", title: "Rust, Python, Node", group: "Build with it", component: Languages },
   { path: "conformance", title: "Conformance tests", group: "Build with it", tag: "live", component: Conformance },
   { path: "decisions", title: "Design decisions", group: "Go deeper", component: Decisions },
+  { path: "glossary", title: "Glossary", group: "Go deeper", component: Glossary },
   { path: "try", title: "Run it on your laptop", group: "Your turn", component: TryIt },
   { path: "evaluate", title: "What we want from you", group: "Your turn", component: Evaluate },
 ];

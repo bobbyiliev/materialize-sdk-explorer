@@ -39,6 +39,14 @@ const ABOUT: Record<string, string> = {
   catalog: "Catalog queries and their parsing, and fingerprints.",
 };
 
+const CONCEPTS: Record<string, string[]> = {
+  "Batches and resume": ["decode", "batch", "append", "latest_by_key", "subscription"],
+  "SQL statements": ["subscribe_sql", "fetch_sql", "catalog"],
+  "Errors": ["classify", "resolve_object_check", "resolve_index_check"],
+  "Checkpoints and fencing": ["checkpoint", "checkpoint_write"],
+  "Object identity": ["compare_identity"],
+};
+
 function equal(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== typeof b || a === null || b === null || typeof a !== "object") return false;
@@ -73,6 +81,7 @@ export function Conformance() {
   const [run, setRun] = useState(0);
   const runs = useMemo(() => runAll(), [run]);
   const [open, setOpen] = useState<string | null>(null);
+  const [concept, setConcept] = useState<string>("All");
   const total = runs.reduce((n, r) => n + r.results.length, 0);
   const passed = runs.reduce((n, r) => n + r.results.filter((x) => x.pass).length, 0);
   const ms = runs.reduce((n, r) => n + r.ms, 0);
@@ -113,7 +122,17 @@ export function Conformance() {
         expects, and what the core returned.
       </p>
 
-      {runs.map(({ suite, results }) => {
+      <div className="segmented" style={{ marginBottom: 14, flexWrap: "wrap" }}>
+        {["All", ...Object.keys(CONCEPTS)].map((c) => (
+          <button key={c} type="button" className={concept === c ? "on" : ""} onClick={() => setConcept(c)}>
+            {c}
+          </button>
+        ))}
+      </div>
+
+      {runs
+        .filter(({ suite }) => concept === "All" || CONCEPTS[concept].includes(suite.function))
+        .map(({ suite, results }) => {
         const ok = results.filter((r) => r.pass).length;
         return (
           <div className="card" key={suite.file} style={{ marginBottom: 12 }}>
@@ -155,12 +174,10 @@ export function Conformance() {
                         <div>
                           <div className="small muted">expected</div>
                           <pre className="json">{JSON.stringify(r.expect, null, 2)}</pre>
-                          {!r.pass && (
-                            <>
-                              <div className="small muted">actual</div>
-                              <pre className="json">{JSON.stringify(r.actual, null, 2)}</pre>
-                            </>
-                          )}
+                          <div className="small muted">
+                            what the core returned{r.pass ? ", the same" : ", different"}
+                          </div>
+                          <pre className="json">{JSON.stringify(r.actual, null, 2)}</pre>
                         </div>
                       </div>
                     )}

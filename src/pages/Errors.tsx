@@ -50,6 +50,13 @@ const KINDS: Record<string, { label: string; does: string }> = {
   fatal: { label: "Fatal", does: "Stop. This covers authentication, SQL, and protocol errors." },
 };
 
+const ACTIONS: Record<string, string> = {
+  transient: "resume from the last commit",
+  fell_behind: "resume from the last commit",
+  credentials_expired: "reconnect once, then stop",
+  history_lost: "history-loss policy: stop",
+};
+
 const CHANGES = ["unchanged", "dropped", "schema_changed", "replaced", "swapped"] as const;
 
 const OUTCOMES: Record<string, string> = {
@@ -87,6 +94,13 @@ export function Errors() {
   }
 
   const code = excerpt("core/src/classify.rs", "pub fn classify(sqlstate", "}", false);
+  const check =
+    result?.action === "check_index"
+      ? `index check: ${indexed ? "an index serves it" : "no index"}`
+      : result?.action === "check_object"
+        ? `object check: ${change.replace("_", " ")}`
+        : "no check needed";
+  const next = finalKind ? ACTIONS[finalKind] ?? "stop" : outcome === "replaced" ? "check retention, then resume" : "stop";
 
   return (
     <>
@@ -98,7 +112,41 @@ export function Errors() {
         before or after the first progress row. Pick an error, or type your own, and the real classifier answers.
       </p>
 
-      <div className="split">
+      <div className="error-path" aria-label="How the core classified this error">
+        <div className="ep-step">
+          <small>error</small>
+          <span className="mono">{input.sqlstate ?? "no SQLSTATE"}</span>
+        </div>
+        <span className="ep-arrow">→</span>
+        <div className="ep-step">
+          <small>arrived</small>
+          <span>{input.phase === "starting" ? "before the first progress row" : "after the first progress row"}</span>
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => setInput({ ...input, phase: input.phase === "starting" ? "streaming" : "starting" })}
+          >
+            try the other phase
+          </button>
+        </div>
+        <span className="ep-arrow">→</span>
+        <div className={`ep-step ${result && result.action !== "kind" ? "ep-check" : ""}`}>
+          <small>check</small>
+          <span>{check}</span>
+        </div>
+        <span className="ep-arrow">→</span>
+        <div className="ep-step ep-kind">
+          <small>kind</small>
+          <strong>{finalKind ? KINDS[finalKind]?.label ?? finalKind : outcome ?? "?"}</strong>
+        </div>
+        <span className="ep-arrow">→</span>
+        <div className={`ep-step ${next.startsWith("resume") || next.startsWith("reconnect") || next.startsWith("check") ? "ep-ok" : "ep-stop"}`}>
+          <small>a durable sink</small>
+          <strong>{next}</strong>
+        </div>
+      </div>
+
+      <div className="split" style={{ marginTop: 16 }}>
         <div>
           <div className="card">
             <h3 style={{ marginTop: 0 }}>The error</h3>

@@ -18,9 +18,9 @@ export function Overview() {
         <div className="eyebrow">Preview · October 2026</div>
         <h1>Read SUBSCRIBE correctly. Build custom sinks.</h1>
         <p className="page-lead">
-          The Materialize SDK turns <code>SUBSCRIBE</code> into ordered, closed batches, and runs sinks that resume
-          after a crash without losing or repeating a change. This site explains how it works, and lets you try every
-          part of it.
+          The Materialize SDK reads every change to a table or view, hands your code complete batches in order, and runs
+          sinks that resume after a crash without losing a change or applying one twice. This site explains how it
+          works, and lets you try every part of it.
         </p>
         <div className="toolbar" style={{ marginTop: 18 }}>
           <a className="btn primary" href="#/protocol">
@@ -42,6 +42,42 @@ export function Overview() {
           every row, releases every batch, classifies every error, and makes every checkpoint decision you see. Only
           Materialize and the sink's target are simulated, by a few hundred lines of TypeScript.
         </p>
+      </div>
+
+      <h2>What it does, in one picture</h2>
+      <div className="story">
+        <div className="story-step">
+          <div className="story-label">1. A table changes in Materialize</div>
+          <code>UPDATE orders SET qty = 4 WHERE id = 1;</code>
+        </div>
+        <div className="story-arrow" aria-hidden="true">
+          →
+        </div>
+        <div className="story-step">
+          <div className="story-label">2. The SDK waits until that moment is complete</div>
+          <div className="mono small">
+            <span className="minus-text">− apple, 3</span> and <span className="plus-text">+ apple, 4</span>, at one
+            timestamp, released when a progress row says nothing earlier is still coming
+          </div>
+        </div>
+        <div className="story-arrow" aria-hidden="true">
+          →
+        </div>
+        <div className="story-step">
+          <div className="story-label">3. Your code gets one complete batch</div>
+          <div className="small">
+            A live UI or cache updates. Or a sink writes it to a target, such as Postgres or a search index, and saves
+            its place, so a crash resumes right there.
+          </div>
+        </div>
+      </div>
+      <div className="toolbar" style={{ marginTop: 12 }}>
+        <a className="btn" href="#/protocol">
+          See it step by step
+        </a>
+        <a className="btn" href="#/durable">
+          See a sink survive crashes
+        </a>
       </div>
 
       <h2>The whole app, in Rust</h2>

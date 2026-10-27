@@ -1,15 +1,19 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { Code } from "../components/Code";
+import { Term, Ts } from "../components/Term";
+import { Timeline } from "../components/Timeline";
 import { EventCard, WireLog, useFollow } from "../components/Wire";
 import type { Envelope, SdkEvent } from "../core/sdk";
 import { excerpt } from "../lib/source";
 import { DEFAULT_MAX_ROWS, LiveRunner } from "../sim/live";
 import { SimMaterialize } from "../sim/materialize";
+import { narrate } from "../sim/narrate";
 
 const FRUITS = ["plum", "fig", "kiwi", "mango", "lime", "cherry", "grape", "peach", "melon", "date"];
 
-function useForce(): () => void {
-  return useReducer((x: number) => x + 1, 0)[1];
+interface Narration {
+  title: string;
+  lines: string[];
 }
 
 export function ProtocolLab() {
@@ -19,60 +23,127 @@ export function ProtocolLab() {
   const [auto, setAuto] = useState(false);
   const [lastCount, setLastCount] = useState(0);
   const [log, setLog] = useState<string[]>([]);
-  const force = useForce();
+  const [narration, setNarration] = useState<Narration | null>(null);
+  const [, force] = useReducer((x: number) => x + 1, 0);
   const state = runner.current.state;
   const started = state.wire.length > 0;
   const eventsRef = useFollow<HTMLDivElement>(state.events.length);
 
-  const fetchOnce = () => {
-    setLastCount(runner.current.state.events.length);
-    runner.current.step();
+  /** Runs `action`, then explains what it sent, received, and released. */
+  const act = (title: string, action: () => void) => {
+    const before = runner.current;
+    const wire0 = before.state.wire.length;
+    const events0 = before.state.events.length;
+    action();
+    const now = runner.current;
+    const fresh = now === before;
+    setLastCount(fresh ? events0 : 0);
+    setNarration({
+      title,
+      lines: narrate(now.state.wire.slice(fresh ? wire0 : 0), now.state.events.slice(fresh ? events0 : 0)),
+    });
     force();
   };
 
   useEffect(() => {
     if (!auto) return;
     const id = setInterval(() => {
-      server.current.tick();
-      setLastCount(runner.current.state.events.length);
-      runner.current.step();
-      force();
-    }, 1200);
+      act("One second passed, then a FETCH", () => {
+        server.current.tick();
+        runner.current.step();
+      });
+    }, 1400);
     return () => clearInterval(id);
-  }, [auto, force]);
+  });
 
-  const start = (env = envelope) => {
+  const restart = (env = envelope) => {
     runner.current.reset();
     runner.current = new LiveRunner(server.current, env, runner.current.maxRows);
     runner.current.open();
-    setLastCount(0);
-    force();
   };
+
+  const fetch = () => runner.current.step();
 
   const sql = (text: string, action: () => void) => {
     action();
     setLog((l) => [...l, text].slice(-12));
-    force();
   };
 
-  const insert = () => {
+  const firstRow = () => [...server.current.rows.values()][0];
+
+  const update = (id: string, qty: number) =>
+    sql(`UPDATE orders SET qty = ${qty} WHERE id = ${id};`, () => server.current.update(id, qty));
+
+  const insertThree = () =>
+    sql("INSERT INTO orders VALUES (...), (...), (...);", () =>
+      server.current.insertMany([0, 1, 2].map((i) => [FRUITS[(i + 3) % FRUITS.length], i + 1])),
+    );
+
+  const insertOne = () => {
     const item = FRUITS[Math.floor(Math.random() * FRUITS.length)];
     const qty = 1 + Math.floor(Math.random() * 9);
     sql(`INSERT INTO orders VALUES (..., '${item}', ${qty});`, () => server.current.insert(item, qty));
   };
 
-  const insertThree = () => {
-    sql("INSERT INTO orders VALUES (...), (...), (...);", () =>
-      server.current.insertMany([0, 1, 2].map((i) => [FRUITS[(i + 3) % FRUITS.length], i + 1])),
-    );
+  const setMaxRows = (n: number) => {
+    runner.current.maxRows = n;
   };
 
-  const switchEnvelope = (env: Envelope) => {
-    setEnvelope(env);
-    if (started) start(env);
-  };
+  // Each step of the guide, done for you.
+  const SHOW: Array<() => void> = [
+    () => act("Start the subscription", () => (restart(), fetch())),
+    () =>
+      act("Update a row", () => {
+        if (!runner.current.state.wire.length) (restart(), fetch());
+        const row = firstRow();
+        if (row) update(row[0]!, Number(row[2]) + 1);
+        fetch();
+      }),
+    () => {
+      act("Insert 3 rows, with 2 rows per FETCH", () => {
+        if (!runner.current.state.wire.length) (restart(), fetch());
+        setMaxRows(2);
+        insertThree();
+        fetch();
+        fetch();
+      });
+    },
+    () =>
+      act("FETCH twice with nothing new", () => {
+        if (!runner.current.state.wire.length) (restart(), fetch());
+        setMaxRows(DEFAULT_MAX_ROWS);
+        fetch();
+        fetch();
+        fetch();
+      }),
+    () =>
+      act("Switch to the upsert envelope and update a row", () => {
+        const env: Envelope = { kind: "upsert", key: ["id"] };
+        setEnvelope(env);
+        restart(env);
+        fetch();
+        const row = firstRow();
+        if (row) update(row[0]!, Number(row[2]) + 1);
+        fetch();
+      }),
+    () =>
+      act("Drop the connection, then resume", () => {
+        if (!runner.current.state.wire.length) (restart(), fetch());
+        runner.current.injectFailure(null, "connection closed");
+        fetch();
+        insertOne();
+        const frontier = runner.current.state.frontier;
+        if (frontier) {
+          runner.current.open({ kind: "resume", frontier });
+          fetch();
+        }
+      }),
+  ];
 
-  const steps = progress(runner.current, state.events, state.wire);
+  // A step stays done after a restart starts a new stream.
+  const done = useRef<boolean[]>([]);
+  done.current = progress(runner.current, state.events, state.wire).map((d, i) => d || !!done.current[i]);
+  const steps = done.current;
   const frontier = state.frontier;
   const failed = state.failed;
 
@@ -81,92 +152,139 @@ export function ProtocolLab() {
       <div className="eyebrow">How it works · live</div>
       <h1>Protocol lab</h1>
       <p className="page-lead">
-        A table on the left, the wire in the middle, and what the SDK hands your code on the right. Every statement and
-        every batch comes from the SDK's real protocol core. Only Materialize is simulated.
+        Change a table and watch what the SDK does with <Term name="SUBSCRIBE" />: what it sends, what comes back, and
+        what your code receives. Every statement and every batch comes from the SDK's real protocol core. Only
+        Materialize is simulated.
       </p>
 
       <div className="grid two" style={{ alignItems: "start" }}>
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Try this</h3>
+          <p className="small muted" style={{ marginTop: 0 }}>
+            Do each step with the controls, or click <em>Show me</em>.
+          </p>
           <ol className="tryit">
             {STEPS.map((s, i) => (
               <li key={s} className={steps[i] ? "done" : ""}>
                 {s}
+                <button type="button" className="btn small show-me" onClick={SHOW[i]} disabled={auto}>
+                  Show me
+                </button>
               </li>
             ))}
           </ol>
         </div>
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Controls</h3>
-          <div className="toolbar">
-            <button className="btn primary" type="button" onClick={() => start()}>
-              {started ? "Restart subscription" : "Start subscription"}
-            </button>
-            <button className="btn" type="button" onClick={fetchOnce} disabled={!started || !!failed || auto}>
-              FETCH
-            </button>
-            <button className="btn" type="button" onClick={() => sql("-- one second passes", () => server.current.tick())}>
-              1 second passes
-            </button>
-            <button className="btn" type="button" onClick={() => setAuto(!auto)} disabled={!started || !!failed}>
-              {auto ? "Pause" : "Run on its own"}
-            </button>
-          </div>
-          <div className="toolbar" style={{ marginTop: 10 }}>
-            <span className="small muted">Envelope</span>
-            <div className="segmented">
-              <button type="button" className={envelope.kind === "diff" ? "on" : ""} onClick={() => switchEnvelope({ kind: "diff" })}>
-                diff
+        <div>
+          <div className="card">
+            <h3 style={{ marginTop: 0 }}>Controls</h3>
+            <div className="toolbar">
+              <button className="btn primary" type="button" onClick={() => act("Start the subscription", () => (restart(), fetch()))}>
+                {started ? "Restart subscription" : "Start subscription"}
+              </button>
+              <button className="btn" type="button" onClick={() => act("FETCH", fetch)} disabled={!started || !!failed || auto}>
+                FETCH
               </button>
               <button
+                className="btn"
                 type="button"
-                className={envelope.kind === "upsert" ? "on" : ""}
-                onClick={() => switchEnvelope({ kind: "upsert", key: ["id"] })}
+                onClick={() => act("One second passed", () => sql("-- one second passes", () => server.current.tick()))}
               >
-                upsert (KEY id)
+                1 second passes
+              </button>
+              <button className="btn" type="button" onClick={() => setAuto(!auto)} disabled={!started || !!failed}>
+                {auto ? "Pause" : "Run on its own"}
               </button>
             </div>
-            <span className="small muted">Rows per FETCH</span>
-            <div className="segmented">
-              {[DEFAULT_MAX_ROWS, 2].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  className={runner.current.maxRows === n ? "on" : ""}
-                  onClick={() => {
-                    runner.current.maxRows = n;
-                    force();
-                  }}
-                >
-                  {n}
-                </button>
-              ))}
+            <div className="toolbar" style={{ marginTop: 10 }}>
+              <span className="small muted">
+                <Term name="envelope">Envelope</Term>
+              </span>
+              <div className="segmented">
+                {(
+                  [
+                    ["diff", { kind: "diff" }],
+                    ["upsert (KEY id)", { kind: "upsert", key: ["id"] }],
+                  ] as Array<[string, Envelope]>
+                ).map(([label, env]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    className={envelope.kind === env.kind ? "on" : ""}
+                    onClick={() => {
+                      setEnvelope(env);
+                      if (started) act(`Restarted in the ${env.kind} envelope`, () => (restart(env), fetch()));
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <span className="small muted">Rows per FETCH</span>
+              <div className="segmented">
+                {[DEFAULT_MAX_ROWS, 2].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={runner.current.maxRows === n ? "on" : ""}
+                    onClick={() => {
+                      setMaxRows(n);
+                      force();
+                    }}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="toolbar" style={{ marginTop: 10 }}>
+              <button
+                className="btn danger"
+                type="button"
+                disabled={!started || !!failed}
+                onClick={() => {
+                  setAuto(false);
+                  act("Dropped the connection", () => {
+                    runner.current.injectFailure(null, "connection closed");
+                    fetch();
+                  });
+                }}
+              >
+                Drop the connection
+              </button>
+              <button
+                className="btn"
+                type="button"
+                disabled={!failed || !frontier}
+                onClick={() =>
+                  act("Resumed from the frontier", () => {
+                    runner.current.open({ kind: "resume", frontier: frontier! });
+                    fetch();
+                  })
+                }
+              >
+                Resume from the frontier
+              </button>
             </div>
           </div>
-          <div className="toolbar" style={{ marginTop: 10 }}>
-            <button
-              className="btn danger"
-              type="button"
-              disabled={!started || !!failed}
-              onClick={() => {
-                setAuto(false);
-                runner.current.injectFailure(null, "connection closed");
-                fetchOnce();
-              }}
-            >
-              Drop the connection
-            </button>
-            <button
-              className="btn"
-              type="button"
-              disabled={!failed || !frontier}
-              onClick={() => {
-                runner.current.open({ kind: "resume", frontier: frontier! });
-                force();
-              }}
-            >
-              Resume from {frontier ? `frontier ${frontier}` : "the frontier"}
-            </button>
+          <div className="narration" style={{ marginTop: 14 }} aria-live="polite">
+            <h3>{narration ? `What just happened: ${narration.title}` : "What just happened"}</h3>
+            {narration ? (
+              narration.lines.length ? (
+                <ul>
+                  {narration.lines.map((l, i) => (
+                    <li key={i}>{l}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="small" style={{ margin: 0 }}>
+                  Nothing went over the wire yet. Click FETCH to read the change.
+                </p>
+              )
+            ) : (
+              <p className="small" style={{ margin: 0 }}>
+                Click <em>Start subscription</em>, or <em>Show me</em> on the first step.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -176,12 +294,23 @@ export function ProtocolLab() {
           <strong>The stream ended with an error.</strong>
           <p>
             A live subscription hands the error to your app. A durable sink resumes on its own when the error is
-            transient: it reconnects with <code>SNAPSHOT = false</code> and <code>AS OF F − 1</code>, where{" "}
-            <code>F</code> is its last commit. Click <em>Resume</em> to see that statement, and check that no change
-            arrives twice.
+            transient: it reconnects with <code>SNAPSHOT = false</code> and <Term name="AS OF F − 1" />, where{" "}
+            <code>F</code> is its last commit. Click <em>Resume from the frontier</em> to see that statement.
           </p>
         </div>
       )}
+
+      <section className="pane" style={{ marginTop: 16 }}>
+        <div className="pane-head">
+          <h3>Timeline</h3>
+          <span className="small muted">
+            A <Term name="batch" /> is released only when a <Term name="progress row" /> closes it.
+          </span>
+        </div>
+        <div className="pane-body" style={{ maxHeight: "none" }}>
+          <Timeline wire={state.wire} events={state.events} />
+        </div>
+      </section>
 
       <div className="lab" style={{ marginTop: 16 }}>
         <section className="pane">
@@ -212,18 +341,16 @@ export function ProtocolLab() {
                       <button
                         type="button"
                         className="btn small"
-                        onClick={() =>
-                          sql(`UPDATE orders SET qty = ${Number(row[2]) + 1} WHERE id = ${row[0]};`, () =>
-                            server.current.update(row[0]!, Number(row[2]) + 1),
-                          )
-                        }
+                        onClick={() => act("Updated a row", () => update(row[0]!, Number(row[2]) + 1))}
                       >
                         qty +1
                       </button>{" "}
                       <button
                         type="button"
                         className="btn small danger"
-                        onClick={() => sql(`DELETE FROM orders WHERE id = ${row[0]};`, () => server.current.delete(row[0]!))}
+                        onClick={() =>
+                          act("Deleted a row", () => sql(`DELETE FROM orders WHERE id = ${row[0]};`, () => server.current.delete(row[0]!)))
+                        }
                       >
                         delete
                       </button>
@@ -233,18 +360,24 @@ export function ProtocolLab() {
               </tbody>
             </table>
             <div className="toolbar" style={{ marginTop: 10 }}>
-              <button className="btn" type="button" onClick={insert}>
+              <button className="btn" type="button" onClick={() => act("Inserted a row", insertOne)}>
                 Insert a row
               </button>
-              <button className="btn" type="button" onClick={insertThree}>
+              <button className="btn" type="button" onClick={() => act("Inserted 3 rows in one statement", insertThree)}>
                 Insert 3 rows
               </button>
             </div>
             <dl className="kv" style={{ marginTop: 12 }}>
               <dt>now</dt>
-              <dd>{String(server.current.now)}</dd>
-              <dt>readable from</dt>
-              <dd>{String(server.current.since())}</dd>
+              <dd>
+                <Ts value={server.current.now} />
+              </dd>
+              <dt>
+                <Term name="readable history">readable from</Term>
+              </dt>
+              <dd>
+                <Ts value={server.current.since()} />
+              </dd>
             </dl>
             {log.length > 0 && (
               <>
@@ -276,7 +409,7 @@ export function ProtocolLab() {
           </div>
           <div className="pane-body tall" ref={eventsRef}>
             {state.events.length === 0 && (
-              <div className="empty">{started ? "Click FETCH." : "Start the subscription."}</div>
+              <div className="empty">{started ? "Nothing yet. Click FETCH." : "Start the subscription."}</div>
             )}
             {state.events.map((e, i) => (
               <EventCard key={i} event={e} fresh={i >= lastCount} />
@@ -288,16 +421,16 @@ export function ProtocolLab() {
       <h2>What to notice</h2>
       <ul>
         <li>
-          The first progress row is at the <code>AS OF</code>. The snapshot's rows are all at that one timestamp, and the
-          snapshot is released only when the next progress row closes it.
+          The first <Term name="progress row" /> is at the <Term name="AS OF" />. The <Term name="snapshot" />
+          's rows are all at that one timestamp, and the snapshot is released only when the next progress row closes it.
         </li>
         <li>
           With 2 rows per <code>FETCH</code>, a <code>FETCH</code> can return changes without a progress row. The core
-          holds them. Your code never sees half of a point in time.
+          holds them, hollow on the timeline. Your code never sees half of a point in time.
         </li>
         <li>
           After a timed <code>FETCH</code> comes back empty, the next one has no timeout. An empty result with a timeout
-          could also mean the stream ended, and only the probe can tell.
+          could also mean the stream ended, and only that second <code>FETCH</code> can tell.
         </li>
         <li>
           The SDK subscribes by catalog id, <code>["u42" AS ...]</code>, so a renamed or swapped object cannot change
@@ -317,9 +450,9 @@ function codeOf(e: { code: string; path: string; url: string }) {
 
 const STEPS = [
   "Start the subscription. The two rows arrive as one snapshot batch.",
-  "Click qty +1 on a row, then FETCH. The update is a − and a + at the same timestamp.",
-  "Set rows per FETCH to 2, insert 3 rows, and FETCH until the batch appears. It waits for the progress row.",
-  "FETCH twice without changing anything. The empty timed FETCH is followed by a probe.",
+  "Update a row, then FETCH. The update is a − and a + at the same timestamp.",
+  "Set rows per FETCH to 2, insert 3 rows, and FETCH twice. The first FETCH has no progress row, so the core holds the changes.",
+  "FETCH twice without changing anything. The empty timed FETCH is followed by one without a timeout.",
   "Switch to the upsert envelope and change a row. You get one upsert per key.",
   "Drop the connection, then resume. No change arrives twice.",
 ];

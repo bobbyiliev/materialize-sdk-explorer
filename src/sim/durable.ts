@@ -26,10 +26,23 @@ export type SinkKind = "transactional" | "non_transactional";
 /** The lab commits a quiet stream every few seconds so the log stays readable. The SDK's default is one second. */
 export const COMMIT_INTERVAL_TICKS = 3;
 
+/** A timestamp's last digits, the part that changes during the lab. */
+const t = (ts: string | bigint | null) => (ts === null ? "none" : `…${String(ts).slice(-5)}`);
+
 export interface Doc {
   value: Row | null;
   ts: bigint;
   generation: bigint;
+}
+
+/** One conditional checkpoint write, as the target judged it. */
+export interface CheckpointAttempt {
+  by: string;
+  kind: CheckpointWrite["kind"];
+  expected: string | null;
+  stored: string | null;
+  proposed: string;
+  applied: boolean;
 }
 
 export interface TargetEvent {
@@ -46,6 +59,8 @@ export class SimTarget {
   docs = new Map<string, Doc>();
   checkpoint: string | null = null;
   events: TargetEvent[] = [];
+  lastWrite: CheckpointAttempt | null = null;
+  lastRefused: CheckpointAttempt | null = null;
 
   constructor(public kind: SinkKind) {}
 
@@ -69,10 +84,12 @@ export class SimTarget {
   }
 
   /** A conditional checkpoint write: it applies only if the stored text is the expected one. */
-  writeCheckpoint(write: CheckpointWrite): boolean {
-    if (this.checkpoint !== write.expected) return false;
-    this.checkpoint = write.new;
-    return true;
+  writeCheckpoint(write: CheckpointWrite, by: string): boolean {
+    const applied = this.checkpoint === write.expected;
+    this.lastWrite = { by, kind: write.kind, expected: write.expected, stored: this.checkpoint, proposed: write.new, applied };
+    if (applied) this.checkpoint = write.new;
+    else this.lastRefused = this.lastWrite;
+    return applied;
   }
 
   sweep(generation: bigint): number {
@@ -156,7 +173,7 @@ export class DurableWorker {
     }
     const stored = JSON.parse(text) as Checkpoint;
     const write = checkpointWrite(stored, "take_over");
-    if (!this.target.writeCheckpoint(write)) {
+    if (!this.target.writeCheckpoint(write, this.name)) {
       this.say({ text: "The take-over lost to a newer write. Reading the checkpoint again.", tone: "warn" });
       return;
     }
@@ -184,7 +201,7 @@ export class DurableWorker {
       this.cursor = this.server.declare(declare);
     } catch (error) {
       this.say({
-        text: current.frontier !== null ? `Resuming from frontier ${current.frontier}.` : "Starting a snapshot.",
+        text: current.frontier !== null ? `Resuming from frontier ${t(current.frontier)}.` : "Starting a snapshot.",
         sql: declare,
       });
       this.fail(error, "starting");
@@ -194,7 +211,7 @@ export class DurableWorker {
     this.say({
       text:
         current.frontier !== null
-          ? `Resuming from frontier ${current.frontier}: no snapshot, and AS OF ${BigInt(current.frontier) - 1n} so the stream starts exactly at the frontier.`
+          ? `Resuming from frontier ${t(current.frontier)}: no snapshot, and AS OF ${t(BigInt(current.frontier) - 1n)} so the stream starts exactly at the frontier.`
           : "No frontier yet, so the stream starts with a snapshot.",
       sql: declare,
     });
@@ -226,7 +243,7 @@ export class DurableWorker {
       if (!this.commitCheckpoint(write)) return false;
       this.started = true;
       this.say({
-        text: `Started a snapshot as of ${asOf} under generation ${write.generation}. Its rows are written under the new generation, next to the old one's.`,
+        text: `Started a snapshot as of ${t(asOf)} under generation ${write.generation}. Its rows are written under the new generation, next to the old one's.`,
         detail: write.new,
       });
     }
@@ -244,16 +261,15 @@ export class DurableWorker {
 
     if (this.target.kind === "transactional") {
       // The batch and its checkpoint commit in one transaction, or neither does.
-      if (this.target.checkpoint !== write.expected) return this.refused(write, event.upper);
       if (this.crashBeforeCheckpoint) {
         this.crashBeforeCheckpoint = false;
         this.say({ text: "Crashed in the middle of the transaction. It rolls back, so neither the batch nor the checkpoint landed.", tone: "bad" });
         this.crash();
         return false;
       }
+      if (!this.target.writeCheckpoint(write, this.name)) return this.refused(write, event.upper);
       this.target.applyBatch(this.name, updates, generation);
-      this.target.writeCheckpoint(write);
-      this.target.log(this.name, "batch", `${summary} + checkpoint ${event.upper}, one transaction`);
+      this.target.log(this.name, "batch", `${summary} + checkpoint ${t(event.upper)}, one transaction`);
     } else {
       if (updates.length > 0) {
         const changed = this.target.applyBatch(this.name, updates, generation);
@@ -271,24 +287,24 @@ export class DurableWorker {
       if (this.crashBeforeCheckpoint) {
         this.crashBeforeCheckpoint = false;
         this.say({
-          text: `Crashed after the batch landed and before its checkpoint. The checkpoint still says ${this.current!.frontier ?? "no frontier"}, so the next worker sends these changes again.`,
+          text: `Crashed after the batch landed and before its checkpoint. The checkpoint still says ${t(this.current!.frontier)}, so the next worker sends these changes again.`,
           tone: "bad",
         });
         this.crash();
         return false;
       }
-      if (!this.target.writeCheckpoint(write)) return this.refused(write, event.upper);
-      this.target.log(this.name, "checkpoint", `commit ${event.upper}`);
+      if (!this.target.writeCheckpoint(write, this.name)) return this.refused(write, event.upper);
+      this.target.log(this.name, "checkpoint", `commit ${t(event.upper)}`);
     }
 
     this.current = JSON.parse(write.new) as Checkpoint;
     this.say({
       text:
         write.kind === "complete_snapshot"
-          ? `Committed ${event.upper}, which completes the snapshot.`
+          ? `Committed ${t(event.upper)}, which completes the snapshot.`
           : updates.length > 0
-            ? `Committed ${summary} up to ${event.upper}.`
-            : `Committed the quiet stream up to ${event.upper}.`,
+            ? `Committed ${summary} up to ${t(event.upper)}.`
+            : `Committed the quiet stream up to ${t(event.upper)}.`,
       tone: "ok",
     });
     if (completes) this.sweep(generation);
@@ -299,7 +315,7 @@ export class DurableWorker {
   private refused(write: CheckpointWrite, upper: string): boolean {
     const stored = JSON.parse(this.target.checkpoint!) as Checkpoint;
     const outcome = checkCommit(stored, JSON.parse(write.expected!) as Checkpoint, upper);
-    this.target.log(this.name, "refused", `commit ${upper} refused: ${outcome.conflict ?? outcome.commit}`);
+    this.target.log(this.name, "refused", `commit ${t(upper)} refused: ${outcome.conflict ?? outcome.commit}`);
     if (outcome.commit === "already_committed") {
       this.current = JSON.parse(write.new) as Checkpoint;
       return true;
@@ -323,7 +339,7 @@ export class DurableWorker {
 
   /** A checkpoint write without a batch, such as the start of a snapshot. */
   private commitCheckpoint(write: CheckpointWrite): boolean {
-    if (this.target.writeCheckpoint(write)) {
+    if (this.target.writeCheckpoint(write, this.name)) {
       this.current = JSON.parse(write.new) as Checkpoint;
       this.target.log(this.name, "checkpoint", write.kind.replace("_", " "));
       return true;
@@ -393,7 +409,7 @@ export function fingerprint(): Fingerprint {
 export function setup(target: SimTarget): CheckpointWrite | null {
   if (target.checkpoint !== null) return null;
   const write = checkpointWrite(null, { create: { subscriptions: { [OBJECT_NAME]: fingerprint() } } });
-  target.writeCheckpoint(write);
+  target.writeCheckpoint(write, "setup");
   target.log("setup", "checkpoint", "created the checkpoint");
   return write;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Row, SdkEvent, Update } from "../core/sdk";
 import type { WireEntry } from "../sim/live";
+import { Ts } from "./Term";
 
 /** Keeps a scrolling pane pinned to its newest entry. */
 export function useFollow<T extends HTMLElement>(dep: unknown) {
@@ -78,7 +79,11 @@ export function describeClassification(c: { action: string; kind?: string; other
 }
 
 export function UpdateLine({ u }: { u: Update }) {
-  const ts = <span className="ts">{u.timestamp}</span>;
+  const ts = (
+    <span className="ts">
+      <Ts value={u.timestamp} />
+    </span>
+  );
   if (u.op === "diff") {
     const plus = !u.diff.startsWith("-");
     return (
@@ -120,8 +125,8 @@ export function EventCard({ event, fresh }: { event: SdkEvent; fresh: boolean })
     <div className={`event ${fresh ? "fresh" : ""}`}>
       <div className="event-head">
         <span className={`badge ${event.snapshot ? "accent" : "ok"}`}>{event.snapshot ? "snapshot batch" : "batch"}</span>
-        <span className="small mono muted">
-          {event.lower ?? "start"} → {event.upper}
+        <span className="small muted">
+          {event.lower === null ? "start" : <Ts value={event.lower} />} → <Ts value={event.upper} />
         </span>
       </div>
       {event.updates.length === 0 ? (

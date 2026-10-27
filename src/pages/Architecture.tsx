@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Code } from "../components/Code";
+import { Sequence } from "../components/Sequence";
 import { excerpt, githubUrl } from "../lib/source";
 
 interface Layer {
@@ -144,19 +145,7 @@ export function Architecture() {
       </div>
 
       <h2>One FETCH, end to end</h2>
-      <div className="flow">
-        <span className="node">core writes FETCH</span>
-        <span className="arrow">→</span>
-        <span className="node">driver sends it</span>
-        <span className="arrow">→</span>
-        <span className="node">Materialize returns rows</span>
-        <span className="arrow">→</span>
-        <span className="node">core decodes and holds them</span>
-        <span className="arrow">→</span>
-        <span className="node">progress row closes a batch</span>
-        <span className="arrow">→</span>
-        <span className="node">your code gets the batch</span>
-      </div>
+      <Sequence />
       <p>
         Rows cross into the core once per <code>FETCH</code>, not once per row, so the cost of calling into WebAssembly
         from Node, or into native code from Python, stays small. The labs on this site use exactly this path, with the

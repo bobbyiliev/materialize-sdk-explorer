@@ -1,5 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { Code } from "../components/Code";
+import { BatchPath, GenerationStages, HistoryWindow, Ownership, WriteInspector } from "../components/DurableViz";
+import { Term, Ts } from "../components/Term";
 import { useFollow } from "../components/Wire";
 import type { Checkpoint } from "../core/sdk";
 import { excerpt } from "../lib/source";
@@ -28,23 +30,30 @@ export function DurableLab() {
   const lab = useRef<Lab>(newLab(kind));
   const [auto, setAuto] = useState(false);
   const [, force] = useReducer((x: number) => x + 1, 0);
+  const done = useRef<boolean[]>([]);
   const { server, target, workers } = lab.current;
 
-  const tick = () => {
-    lab.current.server.tick();
+  const tickOnce = (ms = 1000n) => {
+    lab.current.server.tick(ms);
     for (const w of lab.current.workers) if (w.running) w.step();
-    force();
+  };
+  const ticks = (n: number) => {
+    for (let i = 0; i < n; i++) tickOnce();
   };
 
   useEffect(() => {
     if (!auto) return;
-    const id = setInterval(tick, 1100);
+    const id = setInterval(() => {
+      tickOnce();
+      force();
+    }, 1100);
     return () => clearInterval(id);
   });
 
   const reset = (k = kind) => {
     setAuto(false);
     lab.current = newLab(k);
+    done.current = [];
     force();
   };
 
@@ -52,7 +61,7 @@ export function DurableLab() {
     const w = new DurableWorker(NAMES[lab.current.workers.length % NAMES.length], lab.current.server, lab.current.target);
     lab.current.workers = [...lab.current.workers, w];
     w.step();
-    force();
+    return w;
   };
 
   const act = (f: () => void) => {
@@ -60,28 +69,87 @@ export function DurableLab() {
     force();
   };
 
+  const running = () => lab.current.workers.filter((w) => w.running);
+  const ensureRunning = () => {
+    if (lab.current.target.checkpoint === null) setup(lab.current.target);
+    if (running().length === 0) {
+      startWorker();
+      ticks(3);
+    }
+  };
+  const bumpFirst = () => {
+    const row = [...lab.current.server.rows.values()][0];
+    if (row) lab.current.server.update(row[0]!, Number(row[2]) + 1);
+  };
+
+  // Each step of the guide, done for you.
+  const SHOW: Array<() => void> = [
+    () =>
+      act(() => {
+        ensureRunning();
+      }),
+    () =>
+      act(() => {
+        ensureRunning();
+        lab.current.server.insert(FRUITS[lab.current.server.rows.size % FRUITS.length], 2);
+        ticks(1);
+        bumpFirst();
+        ticks(1);
+      }),
+    () =>
+      act(() => {
+        ensureRunning();
+        running()[0].crashBeforeCheckpoint = true;
+        bumpFirst();
+        ticks(1);
+        startWorker();
+        ticks(2);
+      }),
+    () =>
+      act(() => {
+        ensureRunning();
+        startWorker();
+        bumpFirst();
+        ticks(2);
+      }),
+    () =>
+      act(() => {
+        ensureRunning();
+        lab.current.server.retainHistory = false;
+        for (const w of running()) w.crash();
+        lab.current.server.tick(5000n);
+        startWorker();
+      }),
+  ];
+
   const checkpoint = target.checkpoint ? (JSON.parse(target.checkpoint) as Checkpoint) : null;
-  const done = progress(lab.current);
+  done.current = progress(lab.current).map((d, i) => d || !!done.current[i]);
   const transactional = kind === "transactional";
-  const anyRunning = workers.some((w) => w.running);
 
   return (
     <>
       <div className="eyebrow">How it works · live</div>
       <h1>Durable sink lab</h1>
       <p className="page-lead">
-        A durable sink writes a table into a target and keeps a checkpoint next to the rows. Start workers, crash them,
-        run two at once, and lose history. Every checkpoint, every take-over, and every decision about a refused write
-        comes from the SDK's real protocol core. Materialize and the target are simulated.
+        A durable sink copies a table into a target and keeps a <Term name="checkpoint" /> next to the rows, so it can
+        resume after a crash. Start workers, crash them, run two at once, and lose history. Every checkpoint and every
+        decision about a refused write comes from the SDK's real protocol core. Materialize and the target are
+        simulated.
       </p>
 
       <div className="grid two" style={{ alignItems: "start" }}>
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Try this</h3>
+          <p className="small muted" style={{ marginTop: 0 }}>
+            Do each step with the controls, or click <em>Show me</em>. Steps build on each other.
+          </p>
           <ol className="tryit">
             {(transactional ? STEPS_TX : STEPS).map((s, i) => (
-              <li key={s} className={done[i] ? "done" : ""}>
+              <li key={s} className={done.current[i] ? "done" : ""}>
                 {s}
+                <button type="button" className="btn small show-me" onClick={SHOW[i]} disabled={auto}>
+                  Show me
+                </button>
               </li>
             ))}
           </ol>
@@ -89,38 +157,36 @@ export function DurableLab() {
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Controls</h3>
           <div className="toolbar">
-            <span className="small muted">Target</span>
+            <span className="small muted">Target (switching resets the lab)</span>
             <div className="segmented">
-              <button
-                type="button"
-                className={!transactional ? "on" : ""}
-                onClick={() => {
-                  setKind("non_transactional");
-                  reset("non_transactional");
-                }}
-              >
-                no transactions (turbopuffer)
-              </button>
-              <button
-                type="button"
-                className={transactional ? "on" : ""}
-                onClick={() => {
-                  setKind("transactional");
-                  reset("transactional");
-                }}
-              >
-                transactional (Postgres)
-              </button>
+              {(
+                [
+                  ["non_transactional", "no transactions (turbopuffer)"],
+                  ["transactional", "transactional (Postgres)"],
+                ] as Array<[SinkKind, string]>
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  className={kind === k ? "on" : ""}
+                  onClick={() => {
+                    setKind(k);
+                    reset(k);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
           <div className="toolbar" style={{ marginTop: 10 }}>
             <button className="btn primary" type="button" disabled={target.checkpoint !== null} onClick={() => act(() => setup(target))}>
               Set up the checkpoint
             </button>
-            <button className="btn primary" type="button" disabled={target.checkpoint === null} onClick={startWorker}>
+            <button className="btn primary" type="button" disabled={target.checkpoint === null} onClick={() => act(startWorker)}>
               Start a worker
             </button>
-            <button className="btn" type="button" onClick={tick}>
+            <button className="btn" type="button" onClick={() => act(() => tickOnce())}>
               1 second passes
             </button>
             <button className="btn" type="button" onClick={() => setAuto(!auto)}>
@@ -147,6 +213,12 @@ export function DurableLab() {
             is one second.
           </p>
         </div>
+      </div>
+
+      <div className="grid three" style={{ marginTop: 16, alignItems: "stretch" }}>
+        <Ownership workers={workers} checkpoint={checkpoint} />
+        <HistoryWindow server={server} checkpoint={checkpoint} />
+        <BatchPath kind={kind} />
       </div>
 
       <div className="lab" style={{ marginTop: 16 }}>
@@ -199,21 +271,8 @@ export function DurableLab() {
                 5 seconds pass, no workers run
               </button>
             </div>
-            <dl className="kv" style={{ marginTop: 12 }}>
-              <dt>now</dt>
-              <dd>{String(server.now)}</dd>
-              <dt>readable from</dt>
-              <dd>
-                {String(server.since())}
-                {checkpoint?.frontier && BigInt(checkpoint.frontier) - 1n < server.since() && (
-                  <span className="badge bad" style={{ marginLeft: 6 }}>
-                    past the checkpoint
-                  </span>
-                )}
-              </dd>
-            </dl>
             <p className="small muted">
-              A resume reads from the checkpoint's frontier minus one, so it fails once that falls below "readable from".
+              Changes reach the target only when a worker runs, so let time pass after you change a row.
             </p>
           </div>
         </section>
@@ -241,21 +300,26 @@ export function DurableLab() {
             <span className="badge">simulated</span>
           </div>
           <div className="pane-body tall">
-            <h4 className="small muted" style={{ margin: "0 0 4px" }}>
-              Checkpoint, stored next to the rows
-            </h4>
+            <h4 className="pane-sub">Checkpoint, stored next to the rows</h4>
             {checkpoint ? (
               <>
                 <dl className="kv">
-                  <dt>epoch</dt>
+                  <dt>
+                    <Term name="epoch" />
+                  </dt>
                   <dd>{checkpoint.epoch}</dd>
-                  <dt>generation</dt>
+                  <dt>
+                    <Term name="generation" />
+                  </dt>
                   <dd>{checkpoint.generation}</dd>
-                  <dt>frontier</dt>
-                  <dd>{checkpoint.frontier ?? "none yet"}</dd>
+                  <dt>
+                    <Term name="frontier" />
+                  </dt>
+                  <dd>{checkpoint.frontier ? <Ts value={checkpoint.frontier} /> : "none yet"}</dd>
                   <dt>snapshot AS OF</dt>
-                  <dd>{checkpoint.snapshot_as_of ?? "none in progress"}</dd>
+                  <dd>{checkpoint.snapshot_as_of ? <Ts value={checkpoint.snapshot_as_of} /> : "none in progress"}</dd>
                 </dl>
+                <GenerationStages checkpoint={checkpoint} target={target} />
                 <details className="small" style={{ marginTop: 6 }}>
                   <summary>The exact text the sink stores</summary>
                   <pre className="json">{target.checkpoint}</pre>
@@ -264,9 +328,15 @@ export function DurableLab() {
             ) : (
               <div className="empty">No checkpoint yet.</div>
             )}
-            <h4 className="small muted" style={{ margin: "14px 0 4px" }}>
-              Rows {transactional ? "" : "(a delete keeps a tombstone)"}
-            </h4>
+            {target.lastRefused && (
+              <>
+                <h4 className="pane-sub">Last refused checkpoint write</h4>
+                <WriteInspector attempt={target.lastRefused} />
+              </>
+            )}
+            <h4 className="pane-sub">Last checkpoint write</h4>
+            <WriteInspector attempt={target.lastWrite} />
+            <h4 className="pane-sub">Rows {transactional ? "" : "(a delete keeps a tombstone)"}</h4>
             <table className="mini-table">
               <thead>
                 <tr>
@@ -284,40 +354,48 @@ export function DurableLab() {
                     <tr key={key} className={d.value === null ? "gone" : ""}>
                       <td>{key}</td>
                       <td>{d.value ? `${d.value[1]}, ${d.value[2]}` : "deleted"}</td>
-                      <td className="mono">{String(d.ts).slice(-6)}</td>
+                      <td>
+                        <Ts value={d.ts} />
+                      </td>
                       <td>{String(d.generation)}</td>
                     </tr>
                   ))}
               </tbody>
             </table>
-            <h4 className="small muted" style={{ margin: "14px 0 4px" }}>
-              Writes the target received
-            </h4>
+            <h4 className="pane-sub">Writes the target received</h4>
             <TargetLog target={target} />
           </div>
         </section>
       </div>
 
-      {anyRunning && auto && <p className="small muted">Running. Change rows in Materialize and watch the commits.</p>}
-
       <h2>What to notice</h2>
       <ul>
         <li>
-          Every start is a <strong>take-over</strong>: a conditional write that raises the epoch. The older worker finds
-          out at its next checkpoint write, which fails, and the core reads the stored checkpoint back to say why.
+          Every start is a <strong>take-over</strong>: a conditional write that raises the <Term name="epoch" />. The
+          older worker finds out at its next checkpoint write, which fails, and the core reads the stored checkpoint back
+          to say why. The inspector in the target shows the field that did not match.
         </li>
         <li>
-          {transactional
-            ? "A transactional target writes each batch and its checkpoint in one transaction, so state is exactly once. A crash in the middle rolls both back."
-            : "A target without transactions writes the batch first and the checkpoint second, so a crash in between replays the batch. Each write is conditional on the row's mz_timestamp, so the replay changes nothing."}
+          {transactional ? (
+            <>
+              A <Term name="transactional sink" /> writes each batch and its checkpoint in one transaction, so state is
+              exactly once. A crash in the middle rolls both back.
+            </>
+          ) : (
+            <>
+              A <Term name="non-transactional sink" /> writes the batch first and the checkpoint second, so a crash in
+              between replays the batch. Each write is conditional on the row's mz_timestamp, so the replay changes
+              nothing.
+            </>
+          )}
         </li>
         <li>
-          A resume is <code>SNAPSHOT = false</code> with <code>AS OF</code> one below the checkpoint's frontier, so it
-          starts exactly where the last commit ended.
+          A resume is <code>SNAPSHOT = false</code> with <Term name="AS OF F − 1" />, so it starts exactly where the last
+          commit ended. It needs Materialize to still have history back to that point.
         </li>
         <li>
-          The first snapshot raises the generation. Rows are written under it, and a sweep removes rows of older
-          generations once a snapshot completes.
+          The first snapshot raises the <Term name="generation" />. Rows are written under it, and a sweep removes rows
+          of older generations once a snapshot completes.
         </li>
       </ul>
 
@@ -424,7 +502,7 @@ const STEPS = [
   "Set up the checkpoint and start worker A. It takes the checkpoint over and writes a snapshot.",
   "Change some rows and let time pass. Each batch is written, then committed.",
   "Click “Crash after the batch, before the checkpoint”, then change a row and let a second pass. A writes the change and crashes before its checkpoint. Start worker B: it sends the change again, and the target skips it.",
-  "Start worker C while B runs. C takes over, and B is fenced at its next commit.",
+  "Start another worker while one runs. The new one takes over, and the old one is fenced at its next commit.",
   "Untick RETAIN HISTORY, crash the running worker, let 5 seconds pass, and start a worker. History is lost, and it stops.",
 ];
 
@@ -432,7 +510,7 @@ const STEPS_TX = [
   "Set up the checkpoint and start worker A. It takes the checkpoint over and writes a snapshot.",
   "Change some rows and let time pass. Each batch commits with its checkpoint, in one transaction.",
   "Click “Crash mid-transaction”, then change a row and let a second pass. The transaction rolls back. Start worker B: nothing had landed, so B writes the change once.",
-  "Start worker C while B runs. C takes over, and B's next transaction is refused, so B is fenced.",
+  "Start another worker while one runs. The new one takes over, and the old one's next transaction is refused, so it is fenced.",
   "Untick RETAIN HISTORY, crash the running worker, let 5 seconds pass, and start a worker. History is lost, and it stops.",
 ];
 
