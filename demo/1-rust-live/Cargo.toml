@@ -1,0 +1,14 @@
+[package]
+name = "live"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Keeps this app out of any parent workspace.
+[workspace]
+
+[dependencies]
+# setup/get-sdk.sh checks the sdk-preview branch out here.
+materialize-sdk = { path = "../.sdk/misc/materialize-sdk/rust" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio-postgres = "0.7"

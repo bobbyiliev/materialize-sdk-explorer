@@ -1,0 +1,26 @@
+{
+  "name": "materialize-sdk-explorer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "sync-sdk": "bash scripts/sync-sdk.sh",
+    "test": "esbuild test/run.ts --bundle --platform=node --format=esm --alias:#errors=./src/core/errors.ts --outfile=test/.run.mjs --log-level=warning && ROOT=$PWD node test/.run.mjs"
+  },
+  "dependencies": {
+    "prism-react-renderer": "^2.4.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}
