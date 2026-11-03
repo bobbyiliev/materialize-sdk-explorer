@@ -9,6 +9,7 @@ import { Errors } from "./pages/Errors";
 import { Evaluate } from "./pages/Evaluate";
 import { Glossary } from "./pages/Glossary";
 import { Languages } from "./pages/Languages";
+import { LocalLab } from "./pages/LocalLab";
 import { Overview } from "./pages/Overview";
 import { Problem } from "./pages/Problem";
 import { ProtocolLab } from "./pages/ProtocolLab";
@@ -36,6 +37,7 @@ export const ROUTES: Route[] = [
   { path: "decisions", title: "Design decisions", group: "Go deeper", component: Decisions },
   { path: "glossary", title: "Glossary", group: "Go deeper", component: Glossary },
   { path: "try", title: "Run it on your laptop", group: "Your turn", component: TryIt },
+  { path: "local", title: "Local lab", group: "Your turn", tag: "real", component: LocalLab },
   { path: "evaluate", title: "What we want from you", group: "Your turn", component: Evaluate },
 ];
 

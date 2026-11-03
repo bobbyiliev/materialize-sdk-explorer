@@ -27,6 +27,22 @@ See [`demo/README.md`](demo/README.md). It starts Materialize in Docker and
 runs a live subscription in Rust, Python, and Node, a Postgres sink, and a
 turbopuffer search sink.
 
+## Run the lab against a real Materialize
+
+The Local lab page (`#/local`) is the protocol lab with a real Materialize in
+place of the simulation. The core still runs in the browser. A small server in
+the Vite dev server (`local/bridge.ts`) passes its statements to Materialize.
+
+```sh
+bash demo/setup/start-materialize.sh   # Materialize in Docker on port 26875
+npm ci
+npm run local                           # then open http://localhost:5173/#/local
+```
+
+Set `MZ_URL` to use another Materialize. The page creates an `orders` table
+with an hour of `RETAIN HISTORY` if it does not exist, and changes its rows.
+On the hosted site, the page only shows these steps.
+
 ## Develop the site
 
 Needs Node 22 or later.

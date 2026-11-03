@@ -10,6 +10,10 @@ export function TryIt() {
         The same apps as the labs, against a real Materialize in Docker. About 15 minutes for the Rust part. The
         packages are not published yet, so a script checks the SDK out from the branch and you build it.
       </p>
+      <p className="small muted">
+        To see the protocol lab itself against a real Materialize, without building the SDK, see the{" "}
+        <a href="#/local">Local lab</a>.
+      </p>
 
       <h2>What you need</h2>
       <ul>
