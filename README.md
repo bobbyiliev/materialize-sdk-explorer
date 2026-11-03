@@ -37,6 +37,7 @@ the Vite dev server (`local/bridge.ts`) passes its statements to Materialize.
 bash demo/setup/start-materialize.sh   # Materialize in Docker on port 26875
 npm ci
 npm run local                           # then open http://localhost:5173/#/local
+npm run test:local                      # in another terminal: the lab against it
 ```
 
 Set `MZ_URL` to use another Materialize. The page creates an `orders` table

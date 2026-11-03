@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "sync-sdk": "bash scripts/sync-sdk.sh",
     "test": "esbuild test/run.ts --bundle --platform=node --format=esm --alias:#errors=./src/core/errors.ts --outfile=test/.run.mjs --log-level=warning && ROOT=$PWD node test/.run.mjs",
-    "local": "vite --mode materialize"
+    "local": "vite --mode materialize",
+    "test:local": "esbuild test/local.ts --bundle --platform=node --format=esm --alias:#errors=./src/core/errors.ts --outfile=test/.local.mjs --log-level=warning && ROOT=$PWD node test/.local.mjs"
   },
   "dependencies": {
     "prism-react-renderer": "^2.4.1",

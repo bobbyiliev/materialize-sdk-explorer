@@ -4,3 +4,4 @@ dist/
 test/.run.mjs
 .DS_Store
 tsconfig.tsbuildinfo
+test/.local.mjs
