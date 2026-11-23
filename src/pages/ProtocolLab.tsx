@@ -338,9 +338,9 @@ export function ProtocolLab() {
         <div className="callout warn">
           <strong>The stream ended with an error.</strong>
           <p>
-            A live subscription hands the error to your app. A durable sink resumes on its own when the error is
-            transient: it reconnects with <code>SNAPSHOT = false</code> and <Term name="AS OF F − 1" />, where{" "}
-            <code>F</code> is its last commit.{" "}
+            A live subscription hands the error to your app, and the next connection takes a new snapshot. An app
+            that stores its own frontier can resume instead: it reconnects with <code>SNAPSHOT = false</code> and{" "}
+            <Term name="AS OF F − 1" />, where <code>F</code> is the frontier it stored.{" "}
             {frontier ? (
               <>
                 Click <em>Resume</em> to see that statement.

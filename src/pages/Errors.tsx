@@ -21,7 +21,7 @@ const KINDS: Record<string, { label: string; does: string }> = {
     label: "CredentialsExpired",
     does: "The design reconnects once with fresh credentials from a connection factory, and treats a second refusal as fatal. The prototype has no connection factory yet.",
   },
-  canceled: { label: "Canceled", does: "Stop. Retrying a cancel would make a sink impossible to stop." },
+  canceled: { label: "Canceled", does: "Stop. Retrying a cancel would make a subscription impossible to stop." },
   fell_behind: {
     label: "FellBehind",
     does: "Materialize retired the subscribe because the client read too slowly. Resume from the last commit, with backoff.",
@@ -63,7 +63,7 @@ const OUTCOME_LABELS: Record<string, string> = { replaced: "Replaced in place", 
 
 const OUTCOMES: Record<string, string> = {
   replaced:
-    "The object was replaced in place (same storage, new catalog id). Check the retention again, then resume, and record the new id in the checkpoint.",
+    "The object was replaced in place (same storage, new catalog id). Check the retention again, then resume, and record the new id.",
   swapped:
     "The name now points at other storage, as after a blue/green swap. Stop by default. A planned option takes a new snapshot from the new object instead.",
 };
@@ -148,7 +148,7 @@ export function Errors() {
         </div>
         <span className="ep-arrow">→</span>
         <div className={`ep-step ${next.startsWith("resume") || next.startsWith("reconnect") || next.startsWith("check") ? "ep-ok" : "ep-stop"}`}>
-          <small>a durable sink</small>
+          <small>an app that resumes</small>
           <strong>{next}</strong>
         </div>
       </div>
@@ -223,7 +223,7 @@ export function Errors() {
             <div className="card" style={{ marginTop: 12 }}>
               <p className="small" style={{ marginTop: 0 }}>
                 This error can come from the object changing. The SDK resolves the name again and compares it with the
-                fingerprint in the checkpoint. What did it find?
+                fingerprint stored with the frontier. What did it find?
               </p>
               <div className="segmented" style={{ flexWrap: "wrap" }}>
                 {CHANGES.map((c) => (
@@ -242,7 +242,7 @@ export function Errors() {
                 {finalKind ? KINDS[finalKind]?.label ?? finalKind : OUTCOME_LABELS[outcome!] ?? outcome}
               </h3>
               <p className="small" style={{ margin: 0 }}>
-                <strong>A durable sink:</strong> {finalKind ? KINDS[finalKind]?.does : OUTCOMES[outcome!]}
+                <strong>An app that resumes:</strong> {finalKind ? KINDS[finalKind]?.does : OUTCOMES[outcome!]}
               </p>
               <p className="small muted" style={{ marginBottom: 0 }}>
                 A live subscription returns the classified error to your code.

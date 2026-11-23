@@ -130,7 +130,7 @@ export function EventCard({ event, fresh }: { event: SdkEvent; fresh: boolean })
         </span>
       </div>
       {event.updates.length === 0 ? (
-        <div className="small muted">No changes. The frontier moved, so a checkpoint can move too.</div>
+        <div className="small muted">No changes. The frontier moved, so a stored frontier can move too.</div>
       ) : (
         event.updates.map((u, i) => <UpdateLine key={i} u={u} />)
       )}

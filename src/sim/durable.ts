@@ -17,7 +17,7 @@ import {
   type Row,
   type SdkEvent,
   type Update,
-} from "../core/sdk";
+} from "../core/parked";
 import { CATALOG_OBJECT, OBJECT, OBJECT_NAME, ServerError, type SimMaterialize } from "./materialize";
 
 export const ENVELOPE: Envelope = { kind: "upsert", key: ["id"] };

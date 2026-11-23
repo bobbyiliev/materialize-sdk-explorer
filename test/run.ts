@@ -5,7 +5,9 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { initSync as initParked } from "../src/core/wasm-parked/sdk_core.js";
 import { initSync } from "../src/core/wasm/sdk_core.js";
+import { conformance as parkedConformance } from "../src/core/parked";
 import { conformance, type SdkEvent } from "../src/core/sdk";
 import { DurableWorker, SimTarget, setup } from "../src/sim/durable";
 import { LiveRunner } from "../src/sim/live";
@@ -14,24 +16,37 @@ import { SimMaterialize } from "../src/sim/materialize";
 
 const root = process.env.ROOT!;
 initSync({ module: readFileSync(join(root, "src/core/wasm/sdk_core_bg.wasm")) });
+initParked({ module: readFileSync(join(root, "src/core/wasm-parked/sdk_core_bg.wasm")) });
 
 function test(name: string, f: () => void) {
   f();
   console.log(`ok - ${name}`);
 }
 
+// The case counts catch a sync that silently drops a vector file.
+const LIVE_CASES = 174;
+const PARKED_CASES = 68;
+
 const batches = (events: SdkEvent[]) => events.filter((e) => e.event === "batch");
 
-test("every conformance case passes through the WebAssembly build", () => {
+function runVectors(dir: string, run: (fn: string, input: unknown) => unknown): number {
   let n = 0;
-  for (const file of readdirSync(join(root, "src/vectors"))) {
-    const suite = JSON.parse(readFileSync(join(root, "src/vectors", file), "utf8"));
+  for (const file of readdirSync(join(root, dir))) {
+    const suite = JSON.parse(readFileSync(join(root, dir, file), "utf8"));
     for (const c of suite.cases) {
-      assert.deepEqual(conformance(suite.function, c.input), c.expect, `${file}: ${c.name}`);
+      assert.deepEqual(run(suite.function, c.input), c.expect, `${file}: ${c.name}`);
       n++;
     }
   }
-  assert.equal(n, 241);
+  return n;
+}
+
+test("every conformance case passes through the beta's WebAssembly build", () => {
+  assert.equal(runVectors("src/vectors", conformance), LIVE_CASES);
+});
+
+test("every parked checkpoint case passes through the full stack's WebAssembly build", () => {
+  assert.equal(runVectors("src/vectors-parked", parkedConformance), PARKED_CASES);
 });
 
 test("a live subscription gets a snapshot, then an update as − and + at one timestamp", () => {

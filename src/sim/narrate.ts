@@ -97,7 +97,7 @@ export function narrate(wire: WireEntry[], events: SdkEvent[], ctx: NarrateConte
     if (event.snapshot) {
       out.push(`Your code got the snapshot: ${n} row${n === 1 ? "" : "s"}, all at one timestamp, released when the next progress row closed it.`);
     } else if (n === 0) {
-      out.push(`Your code got an empty batch. Nothing changed, but the frontier moved to ${short(event.upper)}, so a sink's checkpoint can move too.`);
+      out.push(`Your code got an empty batch. Nothing changed, but the frontier moved to ${short(event.upper)}, so a stored frontier can move too.`);
     } else {
       const diffs = event.updates.filter((u) => u.op === "diff");
       const pair = diffs.some(

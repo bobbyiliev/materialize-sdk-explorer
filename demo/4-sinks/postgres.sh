@@ -6,8 +6,10 @@
 # Stop it with Ctrl+C and start it again: it resumes from its checkpoint.
 # Look at the target with:
 #   psql postgres://postgres@localhost:15432/postgres -c "SELECT row, count FROM mz_rows ORDER BY row"
+# Parked with the scope change: it runs the frozen full stack, which
+# `bash setup/get-sdk.sh parked` checks out into demo/.sdk-parked.
 set -euo pipefail
-cd "$(dirname "$0")/../.sdk/misc/materialize-sdk"
+cd "$(dirname "$0")/../.sdk-parked/misc/materialize-sdk"
 if ! docker ps --format '{{.Names}}' | grep -qx pg-sdk-demo; then
   docker run -d --rm --name pg-sdk-demo -e POSTGRES_HOST_AUTH_METHOD=trust -p 15432:5432 postgres:17 >/dev/null
   sleep 3

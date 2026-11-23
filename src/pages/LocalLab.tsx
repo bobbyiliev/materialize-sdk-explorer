@@ -411,7 +411,7 @@ export function LocalLab() {
         <li>
           Materialize's clock runs on its own. A table closes a timestamp about every second, so most{" "}
           <code>FETCH</code>es return one <Term name="progress row" /> and the core releases an empty batch. That empty
-          batch still moves the frontier, which is what a durable sink commits.
+          batch still moves the frontier, which is what an app that resumes would store.
         </li>
         <li>
           A timed <code>FETCH</code> almost never comes back empty, so the probe without a timeout is rare here.

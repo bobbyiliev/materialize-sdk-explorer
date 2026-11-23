@@ -1,26 +1,25 @@
 import rustLive from "../../demo/1-rust-live/src/main.rs?raw";
 import { Code } from "../components/Code";
-import { BRANCH_URL, DESIGN_DOC_URL, DESIGN_FOLLOWUP_PR, SDK_COMMIT } from "../lib/source";
+import { BRANCH_URL, DESIGN_DOC_URL, SCOPE_UPDATE_PR, SDK_COMMIT } from "../lib/source";
 
 const CARDS = [
   { href: "#/protocol", title: "Protocol lab", text: "Change a table and watch every statement, row, and batch the SDK handles." },
-  { href: "#/durable", title: "Durable sink lab", text: "Crash workers, start two at once, lose history, and see the checkpoint hold." },
   { href: "#/errors", title: "Errors lab", text: "Feed any SQLSTATE to the real classifier and see what the SDK does next." },
-  { href: "#/sinks", title: "Writing a sink", text: "The two-method trait every target implements, with turbopuffer and Postgres." },
-  { href: "#/conformance", title: "Conformance tests", text: "Run all 241 shared test cases against the core, here in your browser." },
-  { href: "#/try", title: "Run it on your laptop", text: "Clone, start Materialize in Docker, and run the same apps against it." },
+  { href: "#/conformance", title: "Conformance tests", text: "Run every shared test case against the core, here in your browser." },
+  { href: "#/try", title: "Run it on your laptop", text: "Clone, start Materialize in Docker, and keep a Valkey hash in step with a table." },
+  { href: "#/local", title: "Local lab", text: "The protocol lab against a real Materialize, without building the SDK." },
 ];
 
 export function Overview() {
   return (
     <>
       <div className="hero">
-        <div className="eyebrow">Preview · October 2026</div>
-        <h1>Read SUBSCRIBE correctly. Build custom sinks.</h1>
+        <div className="eyebrow">Beta · November 2026</div>
+        <h1>Read SUBSCRIBE correctly.</h1>
         <p className="page-lead">
-          The Materialize SDK reads every change to a table or view, hands your code complete batches in order, and runs
-          sinks that resume after a crash without losing a change or applying one twice. This site explains how it
-          works, and lets you try every part of it.
+          The Materialize SDK reads every change to a table or view and hands your code complete batches in order, for
+          live views and small syncs such as a cache. This site explains how it works, and lets you try every part of
+          it.
         </p>
         <div className="toolbar" style={{ marginTop: 18 }}>
           <a className="btn primary" href="#/protocol">
@@ -39,8 +38,8 @@ export function Overview() {
         <strong>The labs run the real SDK.</strong>
         <p>
           The SDK's protocol core is compiled to WebAssembly and runs in this page. It writes every statement, decodes
-          every row, releases every batch, classifies every error, and makes every checkpoint decision you see. Only
-          Materialize and the sink's target are simulated, by a few hundred lines of TypeScript.
+          every row, releases every batch, and classifies every error you see. Only Materialize is simulated, by a few
+          hundred lines of TypeScript.
         </p>
       </div>
 
@@ -66,8 +65,8 @@ export function Overview() {
         <div className="story-step">
           <div className="story-label">3. Your code gets one complete batch</div>
           <div className="small">
-            A live UI or cache updates. Or a sink writes it to a target, such as Postgres or a search index, and saves
-            its place, so a crash resumes right there.
+            A live UI or a cache updates. After a reconnect, the SDK takes a new snapshot and delivers at least
+            once.
           </div>
         </div>
       </div>
@@ -75,8 +74,8 @@ export function Overview() {
         <a className="btn" href="#/protocol">
           See it step by step
         </a>
-        <a className="btn" href="#/durable">
-          See a sink survive crashes
+        <a className="btn" href="#/try">
+          Sync a Valkey hash
         </a>
       </div>
 
@@ -103,10 +102,10 @@ export function Overview() {
           <h3 style={{ marginTop: 0 }}>Built and tested</h3>
           <ul className="small">
             <li>The protocol core in Rust, with no I/O.</li>
-            <li>The Rust package: live subscriptions and durable sinks, with checkpoints, fencing, and resume.</li>
-            <li>A turbopuffer search sink, and a Postgres sink example.</li>
-            <li>Python and Node packages over the same core.</li>
-            <li>241 shared conformance cases that every package runs.</li>
+            <li>Live subscriptions in Rust, Python, and Node, over the same core.</li>
+            <li>The resume arithmetic and catalog checks in the core, for one object, for apps that keep their own frontier.</li>
+            <li>An example that keeps a Valkey hash equal to a relation.</li>
+            <li>Shared conformance cases that every package runs.</li>
             <li>An end-to-end suite against a real Materialize.</li>
           </ul>
         </div>
@@ -114,17 +113,27 @@ export function Overview() {
           <h3 style={{ marginTop: 0 }}>Where to find it</h3>
           <ul className="small">
             <li>
-              The code: the <a href={BRANCH_URL}>sdk-preview branch</a> (this site uses{" "}
+              The code: the <a href={BRANCH_URL}>sdk-beta branch</a> (this site uses{" "}
               <span className="mono">{SDK_COMMIT.slice(0, 10)}</span>).
             </li>
             <li>
-              The design: <a href={DESIGN_DOC_URL}>the design doc</a>, merged, and{" "}
-              <a href={DESIGN_FOLLOWUP_PR}>a follow-up that aligns it with the prototype</a>.
+              The design: <a href={DESIGN_DOC_URL}>the design doc</a>, and{" "}
+              <a href={SCOPE_UPDATE_PR}>the scope update</a> that narrows it to the beta.
             </li>
-            <li>The review: the code lands as a stack of small PRs. The first ones are open.</li>
+            <li>The review: the code lands as a stack of small PRs, one at a time.</li>
             <li>Not published yet on crates.io, PyPI, or npm. You build it from the branch.</li>
           </ul>
         </div>
+      </div>
+
+      <div className="callout">
+        <strong>Parked: sinks and durable mode.</strong>
+        <p>
+          Every SUBSCRIBE result passes through environmentd, so sinks built on it do not scale out. The sink framework,
+          checkpoints, and the Postgres and turbopuffer sinks are parked with{" "}
+          <a href={SCOPE_UPDATE_PR}>the scope update</a>. Their pages stay under <em>Parked</em> in the menu, running
+          the frozen full stack.
+        </p>
       </div>
 
       <h2>Who this is for</h2>
@@ -143,8 +152,8 @@ export function Overview() {
           </p>
         </div>
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>Anyone building a sink</h3>
-          <p className="small muted">How much code does a new target need, and what must it guarantee?</p>
+          <h3 style={{ marginTop: 0 }}>Anyone building a live view or a sync</h3>
+          <p className="small muted">How much code does a cache or a UI need on top of the SDK?</p>
         </div>
       </div>
     </>

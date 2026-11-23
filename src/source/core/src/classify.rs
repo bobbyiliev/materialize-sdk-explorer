@@ -195,7 +195,7 @@ pub enum ObjectOutcome {
     },
     /// See [`IdentityChange::Replaced`].
     Replaced,
-    /// See [`IdentityChange::Swapped`]. The sink stops, or takes a new
+    /// See [`IdentityChange::Swapped`]. The consumer stops, or takes a new
     /// snapshot of the new object if it follows the name.
     Swapped,
 }

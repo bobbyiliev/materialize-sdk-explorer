@@ -14,7 +14,6 @@ const HAZARDS = [
   {
     title: "History expires, even during a short outage",
     text: "RETAIN HISTORY keeps a window behind the object's upper. After an outage the upper catches up and the window moves with it, so a one-hour window can expire during a one-hour outage. Without RETAIN HISTORY, a table keeps about one second.",
-    lab: "Durable lab, step 5",
   },
   {
     title: "An index can quietly shorten history",
@@ -23,7 +22,7 @@ const HAZARDS = [
   },
   {
     title: "A query re-reads its whole snapshot on every resume",
-    text: "SUBSCRIBE to an object with SNAPSHOT = false never reads the snapshot. Any query, even SELECT * FROM mv, reads the whole snapshot at the AS OF before it emits anything. That is why a durable sink reads one table, source, or materialized view.",
+    text: "SUBSCRIBE to an object with SNAPSHOT = false never reads the snapshot. Any query, even SELECT * FROM mv, reads the whole snapshot at the AS OF before it emits anything. That is why a resume reads one table, source, or materialized view.",
   },
   {
     title: "The stream's shape is easy to assume wrong",
@@ -36,17 +35,12 @@ const HAZARDS = [
   },
   {
     title: "The same error code means different things",
-    text: "A dataflow error, a result over max_result_size, and a real internal error all arrive as XX000. Lost history is 22000, shared with other data errors. Retrying the wrong one loops forever, and giving up on the wrong one stops a healthy sink.",
+    text: "A dataflow error, a result over max_result_size, and a real internal error all arrive as XX000. Lost history is 22000, shared with other data errors. Retrying the wrong one loops forever, and giving up on the wrong one stops a healthy subscription.",
     lab: "Errors lab",
   },
   {
     title: "Big snapshots fail on the server",
     text: "A snapshot is one timestamp, so it cannot exceed max_result_size (1 GB by default). The replica builds the whole batch before it checks the size, so a very large one can run the replica out of memory first. Retrying repeats the failure.",
-  },
-  {
-    title: "Two copies of a sink overwrite each other",
-    text: "During a deploy or a failover, two workers can run at once. Without fencing, the older one keeps committing and moves the checkpoint back, or writes over the newer one's work.",
-    lab: "Durable lab, step 4",
   },
 ];
 
@@ -87,10 +81,10 @@ export function Problem() {
 DECLARE c CURSOR FOR SUBSCRIBE ["u42" AS "materialize"."public"."orders"]
   WITH (PROGRESS, SNAPSHOT = false) AS OF 1793110004091;
 FETCH 1000 c WITH (TIMEOUT = '1000 milliseconds');
--- ...and the decoding, batching, checkpoints, and retries around it`}
+-- ...and the decoding, batching, and error handling around it`}
       />
 
-      <h2>Ten things that go wrong</h2>
+      <h2>Nine things that go wrong</h2>
       <p className="muted">Each was checked against Materialize's code for the design. The labs let you trigger most of them.</p>
       {HAZARDS.map((h, i) => (
         <div className="hazard" key={h.title}>
@@ -106,14 +100,12 @@ FETCH 1000 c WITH (TIMEOUT = '1000 milliseconds');
       <h2>What the SDK promises</h2>
       <div className="callout ok">
         <p>
-          With the SDK, you cannot commit an unclosed timestamp, cannot get the <code>AS OF</code> arithmetic wrong, and
-          cannot silently lose or duplicate changes across a restart.
+          With the SDK, you cannot release an unclosed timestamp or get the <code>AS OF</code> arithmetic wrong. A live
+          subscription takes a new snapshot after each reconnect, so it loses nothing, and it delivers at least once.
         </p>
       </div>
       <p>
-        The test of that promise kills a sink at random points. A target that commits data and checkpoint together
-        must then hold exactly <code>SELECT ... AS OF F − 1</code>, where <code>F</code> is its committed frontier. A
-        target without transactions must hold the same once the sink has caught up.
+        The shared conformance cases and a nightly suite against a real Materialize test these rules in every package.
       </p>
     </>
   );

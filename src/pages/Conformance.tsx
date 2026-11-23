@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
+import { conformance as parkedConformance } from "../core/parked";
 import { conformance } from "../core/sdk";
-import { githubUrl } from "../lib/source";
+import { githubUrl, parked } from "../lib/source";
 
 interface Case {
   name: string;
@@ -13,14 +14,44 @@ interface Result extends Case {
   pass: boolean;
 }
 
-const files = import.meta.glob("../vectors/*.json", { eager: true, import: "default" }) as Record<
-  string,
-  { function: string; cases: Case[] }
->;
+type Files = Record<string, { function: string; cases: Case[] }>;
+type Suite = { file: string; function: string; cases: Case[] };
 
-const SUITES = Object.entries(files)
-  .map(([path, suite]) => ({ file: path.split("/").pop()!, ...suite }))
-  .sort((a, b) => a.file.localeCompare(b.file));
+const liveFiles = import.meta.glob("../vectors/*.json", { eager: true, import: "default" }) as Files;
+const parkedFiles = import.meta.glob("../vectors-parked/*.json", { eager: true, import: "default" }) as Files;
+
+function suites(files: Files): Suite[] {
+  return Object.entries(files)
+    .map(([path, suite]) => ({ file: path.split("/").pop()!, ...suite }))
+    .sort((a, b) => a.file.localeCompare(b.file));
+}
+
+/** One set of vectors and the core build that runs them. */
+interface VectorSet {
+  suites: Suite[];
+  run: (fn: string, input: unknown) => unknown;
+  url: (path: string) => string;
+  concepts: Record<string, string[]>;
+}
+
+const LIVE: VectorSet = {
+  suites: suites(liveFiles),
+  run: conformance,
+  url: githubUrl,
+  concepts: {
+    "Batches and resume": ["decode", "batch", "append", "latest_by_key", "subscription"],
+    "SQL statements": ["subscribe_sql", "fetch_sql", "catalog"],
+    "Errors": ["classify", "resolve_object_check", "resolve_index_check"],
+    "Object identity": ["compare_identity"],
+  },
+};
+
+const PARKED: VectorSet = {
+  suites: suites(parkedFiles),
+  run: parkedConformance,
+  url: parked.githubUrl,
+  concepts: {},
+};
 
 const ABOUT: Record<string, string> = {
   decode: "Turning SUBSCRIBE rows into changes, for both envelopes.",
@@ -39,14 +70,6 @@ const ABOUT: Record<string, string> = {
   catalog: "Catalog queries and their parsing, and fingerprints.",
 };
 
-const CONCEPTS: Record<string, string[]> = {
-  "Batches and resume": ["decode", "batch", "append", "latest_by_key", "subscription"],
-  "SQL statements": ["subscribe_sql", "fetch_sql", "catalog"],
-  "Errors": ["classify", "resolve_object_check", "resolve_index_check"],
-  "Checkpoints and fencing": ["checkpoint", "checkpoint_write"],
-  "Object identity": ["compare_identity"],
-};
-
 function equal(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== typeof b || a === null || b === null || typeof a !== "object") return false;
@@ -61,13 +84,13 @@ function equal(a: unknown, b: unknown): boolean {
   return keys.length === Object.keys(bo).length && keys.every((k) => equal(ao[k], bo[k]));
 }
 
-function runAll(): { suite: (typeof SUITES)[number]; results: Result[]; ms: number }[] {
-  return SUITES.map((suite) => {
+function runAll(set: VectorSet): { suite: Suite; results: Result[]; ms: number }[] {
+  return set.suites.map((suite) => {
     const start = performance.now();
     const results = suite.cases.map((c) => {
       let actual: unknown;
       try {
-        actual = conformance(suite.function, c.input);
+        actual = set.run(suite.function, c.input);
       } catch (e) {
         actual = { thrown: String(e) };
       }
@@ -78,14 +101,6 @@ function runAll(): { suite: (typeof SUITES)[number]; results: Result[]; ms: numb
 }
 
 export function Conformance() {
-  const [run, setRun] = useState(0);
-  const runs = useMemo(() => runAll(), [run]);
-  const [open, setOpen] = useState<string | null>(null);
-  const [concept, setConcept] = useState<string>("All");
-  const total = runs.reduce((n, r) => n + r.results.length, 0);
-  const passed = runs.reduce((n, r) => n + r.results.filter((x) => x.pass).length, 0);
-  const ms = runs.reduce((n, r) => n + r.ms, 0);
-
   return (
     <>
       <div className="eyebrow">Build with it · live</div>
@@ -95,7 +110,38 @@ export function Conformance() {
         Node packages run them again through their own bindings. Here they run through the WebAssembly build, the same
         one the Node package ships.
       </p>
+      <Vectors set={LIVE} />
+      <p className="small muted">
+        The checkpoint and fencing vectors are parked with the sinks. See <a href="#/parked-conformance">checkpoint tests</a>.
+      </p>
+    </>
+  );
+}
 
+export function ParkedConformance() {
+  return (
+    <>
+      <h1>Checkpoint tests</h1>
+      <p className="page-lead">
+        The vectors for checkpoints, fencing, and the writes the SDK hands a sink. The beta core does not have these
+        functions, so they run through the full stack's WebAssembly build.
+      </p>
+      <Vectors set={PARKED} />
+    </>
+  );
+}
+
+function Vectors({ set }: { set: VectorSet }) {
+  const [run, setRun] = useState(0);
+  const runs = useMemo(() => runAll(set), [set, run]);
+  const [open, setOpen] = useState<string | null>(null);
+  const [concept, setConcept] = useState<string>("All");
+  const total = runs.reduce((n, r) => n + r.results.length, 0);
+  const passed = runs.reduce((n, r) => n + r.results.filter((x) => x.pass).length, 0);
+  const ms = runs.reduce((n, r) => n + r.ms, 0);
+
+  return (
+    <>
       <div className="grid three" style={{ marginBottom: 20 }}>
         <div className="card">
           <div className="small muted">Passed</div>
@@ -122,16 +168,18 @@ export function Conformance() {
         expects, and what the core returned.
       </p>
 
+      {Object.keys(set.concepts).length > 0 && (
       <div className="segmented" style={{ marginBottom: 14, flexWrap: "wrap" }}>
-        {["All", ...Object.keys(CONCEPTS)].map((c) => (
+        {["All", ...Object.keys(set.concepts)].map((c) => (
           <button key={c} type="button" className={concept === c ? "on" : ""} onClick={() => setConcept(c)}>
             {c}
           </button>
         ))}
       </div>
+      )}
 
       {runs
-        .filter(({ suite }) => concept === "All" || CONCEPTS[concept].includes(suite.function))
+        .filter(({ suite }) => concept === "All" || set.concepts[concept].includes(suite.function))
         .map(({ suite, results }) => {
         const ok = results.filter((r) => r.pass).length;
         return (
@@ -143,7 +191,7 @@ export function Conformance() {
                   {ok}/{results.length}
                 </span>
               </span>
-              <a className="small" href={githubUrl(`conformance/${suite.file}`)} target="_blank" rel="noreferrer">
+              <a className="small" href={set.url(`conformance/${suite.file}`)} target="_blank" rel="noreferrer">
                 {suite.file}
               </a>
             </div>

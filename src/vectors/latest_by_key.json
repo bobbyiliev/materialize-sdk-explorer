@@ -17,26 +17,24 @@
       ]
     },
     {
-      "name": "a key violation is kept over a later change to its key",
+      "name": "a later change replaces a key violation",
       "input": {
         "updates": [
           {"timestamp": "1", "op": "key_violation", "key": ["k"]},
-          {"timestamp": "2", "op": "delete", "key": ["k"]}
+          {"timestamp": "2", "op": "upsert", "key": ["k"], "value": ["v"]}
         ]
       },
-      "expect": [{"timestamp": "1", "op": "key_violation", "key": ["k"]}]
+      "expect": [{"timestamp": "2", "op": "upsert", "key": ["k"], "value": ["v"]}]
     },
     {
-      "name": "the latest of several key violations is kept",
+      "name": "a key violation replaces an earlier change",
       "input": {
         "updates": [
-          {"timestamp": "1", "op": "key_violation", "key": ["k"]},
-          {"timestamp": "2", "op": "upsert", "key": ["k"], "value": ["v"]},
-          {"timestamp": "3", "op": "key_violation", "key": ["k"]},
-          {"timestamp": "4", "op": "delete", "key": ["k"]}
+          {"timestamp": "1", "op": "upsert", "key": ["k"], "value": ["v"]},
+          {"timestamp": "2", "op": "key_violation", "key": ["k"]}
         ]
       },
-      "expect": [{"timestamp": "3", "op": "key_violation", "key": ["k"]}]
+      "expect": [{"timestamp": "2", "op": "key_violation", "key": ["k"]}]
     },
     {
       "name": "keys order as text, with NULL first",

@@ -30,6 +30,7 @@
     "src"
   ],
   "exclude": [
-    "src/source"
+    "src/source",
+    "src/source-parked"
   ]
 }

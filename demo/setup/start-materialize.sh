@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Starts Materialize in Docker on port 26875 (SQL) and 26877 (system), and
-# turns on RETAIN HISTORY, which a durable sink needs to resume.
+# turns on RETAIN HISTORY, which only the parked durable sinks need.
 set -euo pipefail
 URL="postgres://materialize@localhost:26875/materialize"
 ready() { psql "$URL" -qtAc "select 1" >/dev/null 2>&1; }

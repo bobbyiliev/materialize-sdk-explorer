@@ -423,7 +423,7 @@
       }
     },
     {
-      "name": "a view is not durable",
+      "name": "a view is not resumable",
       "input": {
         "fingerprint": {
           "object": {
@@ -439,7 +439,7 @@
       "expect": {"error": "usage"}
     },
     {
-      "name": "a system object is not durable",
+      "name": "a system object is not resumable",
       "input": {
         "fingerprint": {
           "object": {
@@ -455,7 +455,7 @@
       "expect": {"error": "usage"}
     },
     {
-      "name": "a source without columns, a primary object that emits no data, is not durable",
+      "name": "a source without columns, a primary object that emits no data, is not resumable",
       "input": {
         "fingerprint": {
           "object": {
@@ -471,7 +471,7 @@
       "expect": {"error": "usage"}
     },
     {
-      "name": "a table without columns is durable",
+      "name": "a table without columns is resumable",
       "input": {
         "fingerprint": {
           "object": {

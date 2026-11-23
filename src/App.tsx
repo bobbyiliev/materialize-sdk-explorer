@@ -1,8 +1,9 @@
 import { useEffect, useState, type ComponentType } from "react";
+import { loadParkedCore } from "./core/parked";
 import { loadCore } from "./core/sdk";
-import { SDK_COMMIT } from "./lib/source";
+import { PARKED_COMMIT, PARKED_URL, SCOPE_UPDATE_PR, SDK_COMMIT } from "./lib/source";
 import { Architecture } from "./pages/Architecture";
-import { Conformance } from "./pages/Conformance";
+import { Conformance, ParkedConformance } from "./pages/Conformance";
 import { Decisions } from "./pages/Decisions";
 import { DurableLab } from "./pages/DurableLab";
 import { Errors } from "./pages/Errors";
@@ -11,6 +12,7 @@ import { Glossary } from "./pages/Glossary";
 import { Languages } from "./pages/Languages";
 import { LocalLab } from "./pages/LocalLab";
 import { Overview } from "./pages/Overview";
+import { ParkedTryIt } from "./pages/ParkedTryIt";
 import { Problem } from "./pages/Problem";
 import { ProtocolLab } from "./pages/ProtocolLab";
 import { SinkApi } from "./pages/SinkApi";
@@ -21,6 +23,8 @@ export interface Route {
   title: string;
   group: string;
   tag?: string;
+  /** Runs on the frozen full-stack core, behind a banner. */
+  parked?: boolean;
   component: ComponentType;
 }
 
@@ -29,9 +33,7 @@ export const ROUTES: Route[] = [
   { path: "problem", title: "Why SUBSCRIBE is hard", group: "Start here", component: Problem },
   { path: "architecture", title: "Architecture", group: "How it works", component: Architecture },
   { path: "protocol", title: "Protocol lab", group: "How it works", tag: "live", component: ProtocolLab },
-  { path: "durable", title: "Durable sink lab", group: "How it works", tag: "live", component: DurableLab },
   { path: "errors", title: "Errors lab", group: "How it works", tag: "live", component: Errors },
-  { path: "sinks", title: "Writing a sink", group: "Build with it", component: SinkApi },
   { path: "languages", title: "Rust, Python, Node", group: "Build with it", component: Languages },
   { path: "conformance", title: "Conformance tests", group: "Build with it", tag: "live", component: Conformance },
   { path: "decisions", title: "Design decisions", group: "Go deeper", component: Decisions },
@@ -39,6 +41,17 @@ export const ROUTES: Route[] = [
   { path: "try", title: "Run it on your laptop", group: "Your turn", component: TryIt },
   { path: "local", title: "Local lab", group: "Your turn", tag: "real", component: LocalLab },
   { path: "evaluate", title: "What we want from you", group: "Your turn", component: Evaluate },
+  { path: "durable", title: "Durable sink lab", group: "Parked", tag: "live", parked: true, component: DurableLab },
+  { path: "sinks", title: "Writing a sink", group: "Parked", parked: true, component: SinkApi },
+  {
+    path: "parked-conformance",
+    title: "Checkpoint tests",
+    group: "Parked",
+    tag: "live",
+    parked: true,
+    component: ParkedConformance,
+  },
+  { path: "try-sinks", title: "Run the sinks", group: "Parked", parked: true, component: ParkedTryIt },
 ];
 
 function currentPath(): string {
@@ -48,6 +61,7 @@ function currentPath(): string {
 export function App() {
   const [path, setPath] = useState(currentPath);
   const [ready, setReady] = useState(false);
+  const [parkedReady, setParkedReady] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
 
@@ -73,6 +87,15 @@ export function App() {
   const Page = route.component;
   const groups = [...new Set(ROUTES.map((r) => r.group))];
 
+  // The parked core loads only when a parked page first needs it.
+  useEffect(() => {
+    if (!route.parked || parkedReady) return;
+    loadParkedCore().then(
+      () => setParkedReady(true),
+      (error: unknown) => setFailed(String(error)),
+    );
+  }, [route, parkedReady]);
+
   useEffect(() => {
     document.title = route.path ? `${route.title} · Materialize SDK Explorer` : "Materialize SDK Explorer";
   }, [route]);
@@ -90,7 +113,7 @@ export function App() {
           <span className="brand-mark">M</span>
           <span>
             <div className="brand-name">Materialize SDK</div>
-            <div className="brand-sub">Explorer · preview</div>
+            <div className="brand-sub">Explorer · beta</div>
           </span>
         </a>
         {groups.map((group) => (
@@ -115,8 +138,9 @@ export function App() {
             <strong>The protocol core did not load.</strong>
             <p>{failed}</p>
           </div>
-        ) : ready ? (
+        ) : ready && (!route.parked || parkedReady) ? (
           <>
+            {route.parked && <ParkedBanner />}
             <Page />
             <Pager index={index} />
           </>
@@ -124,6 +148,22 @@ export function App() {
           <div className="loading">Loading the protocol core…</div>
         )}
       </main>
+    </div>
+  );
+}
+
+function ParkedBanner() {
+  return (
+    <div className="callout warn">
+      <strong>Parked</strong>
+      <p>
+        Sinks, checkpoints, and durable mode are parked with the <a href={SCOPE_UPDATE_PR}>scope change</a>. The beta
+        covers live subscriptions and small syncs. This page runs the full stack's core, frozen at{" "}
+        <a href={PARKED_URL} className="mono">
+          {PARKED_COMMIT.slice(0, 10)}
+        </a>
+        .
+      </p>
     </div>
   );
 }

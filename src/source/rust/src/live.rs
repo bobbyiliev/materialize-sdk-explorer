@@ -141,7 +141,7 @@ impl LiveOptions {
         self
     }
 
-    pub(crate) fn validate(&self) -> Result<(), Error> {
+    fn validate(&self) -> Result<(), Error> {
         fetch_sql("c", self.max_rows, Some(self.fetch_timeout))
             .map_err(|error| Error::InvalidOption(error.to_string()))?;
         if self.buffer == 0 {
@@ -173,7 +173,7 @@ pub struct LiveSubscription {
 /// Aborts the task when dropped, so that dropping a [`LiveSubscription`], or
 /// the future of [`LiveSubscription::connect`], ends the session.
 #[derive(Debug)]
-pub(crate) struct AbortOnDrop(pub(crate) JoinHandle<()>);
+struct AbortOnDrop(JoinHandle<()>);
 
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
@@ -202,30 +202,8 @@ impl LiveSubscription {
         T: MakeTlsConnect<Socket>,
         T::Stream: Send + 'static,
     {
-        LiveSubscription::connect_at(
-            config,
-            tls,
-            subscribe,
-            Start::Snapshot { as_of: None },
-            options,
-        )
-        .await
-    }
-
-    /// [`LiveSubscription::connect`], starting at `start`.
-    pub(crate) async fn connect_at<T>(
-        config: &Config,
-        tls: T,
-        subscribe: Subscribe,
-        start: Start,
-        options: LiveOptions,
-    ) -> Result<LiveSubscription, Error>
-    where
-        T: MakeTlsConnect<Socket>,
-        T::Stream: Send + 'static,
-    {
         options.validate()?;
-        let mut sub = Subscription::new(subscribe, start)?;
+        let mut sub = Subscription::new(subscribe, Start::Snapshot { as_of: None })?;
         if let Some(limit) = options.max_pending_bytes {
             sub = sub.with_max_pending_bytes(limit);
         }
@@ -515,7 +493,7 @@ async fn fetch_loop(
 
 /// Runs `sql` with the simple query protocol, which returns every cell in its
 /// text format, and returns the column names and the rows.
-pub(crate) async fn query(
+async fn query(
     client: &Client,
     sql: &str,
 ) -> Result<(Vec<String>, Vec<Row>), tokio_postgres::Error> {
@@ -567,7 +545,7 @@ fn silent(sub: &Subscription, wait: Duration) -> Error {
 /// silent within about a minute. tokio-postgres starts keepalives only after
 /// two hours idle, so an untimed `FETCH` on a dropped connection would wait
 /// that long.
-pub(crate) fn with_network_defaults(config: &Config) -> Config {
+fn with_network_defaults(config: &Config) -> Config {
     let mut config = config.clone();
     if config.get_connect_timeout().is_none() {
         config.connect_timeout(Duration::from_secs(30));
@@ -602,7 +580,7 @@ fn server_error(sub: &Subscription, error: &tokio_postgres::Error) -> Error {
 }
 
 /// The error for a failed request, classified by `classify`.
-pub(crate) fn server_error_with(
+fn server_error_with(
     error: &tokio_postgres::Error,
     classify: impl FnOnce(Option<&str>, &str) -> Classification,
 ) -> Error {
@@ -627,7 +605,7 @@ pub(crate) fn server_error_with(
 
 /// The driver's message with its causes, such as "connection refused", which
 /// its own message omits.
-pub(crate) fn message_with_sources(error: &tokio_postgres::Error) -> String {
+fn message_with_sources(error: &tokio_postgres::Error) -> String {
     let mut message = error.to_string();
     let mut source = std::error::Error::source(error);
     while let Some(cause) = source {

@@ -1,7 +1,9 @@
 import { Code } from "../components/Code";
-import { BRANCH_URL, EXPLORER_REPO } from "../lib/source";
+import { BRANCH_URL, EXPLORER_REPO, excerpt } from "../lib/source";
 
 export function TryIt() {
+  const sync = excerpt("rust/examples/valkey.rs", "async fn sync(", "}");
+  const valkeyCode = { code: sync.code, title: sync.path, href: sync.url, maxHeight: 420 };
   return (
     <>
       <div className="eyebrow">Your turn</div>
@@ -25,7 +27,6 @@ export function TryIt() {
         <li>
           For Node: Node 22 or later, and wasm-pack (<code>cargo install wasm-pack --version 0.13.1 --locked</code>).
         </li>
-        <li>For the search sink: a turbopuffer API key. The Postgres sink needs no key.</li>
       </ul>
 
       <h2>1. Get the demo and the SDK</h2>
@@ -36,7 +37,7 @@ cd materialize-sdk-explorer/demo
 bash setup/get-sdk.sh`}
       />
       <p className="small muted">
-        <code>get-sdk.sh</code> fetches only the SDK's folder from the <a href={BRANCH_URL}>sdk-preview branch</a>, about
+        <code>get-sdk.sh</code> fetches only the SDK's folder from the <a href={BRANCH_URL}>sdk-beta branch</a>, about
         4 MB, into <code>demo/.sdk</code>.
       </p>
 
@@ -48,15 +49,14 @@ export PGOPTIONS="-c client_min_messages=warning"
 psql postgres://materialize@localhost:26875/materialize`}
       />
       <p className="small muted">
-        It runs <code>materialize/materialized:latest</code> on port 26875, and turns on <code>RETAIN HISTORY</code>,
-        which a durable sink needs to resume.
+        It runs <code>materialize/materialized:latest</code> on port 26875.
       </p>
 
       <h2>3. A live subscription in Rust</h2>
       <p>In psql:</p>
       <Code
         lang="sql"
-        code={`CREATE TABLE orders (id int, item text, qty int) WITH (RETAIN HISTORY = FOR '1h');
+        code={`CREATE TABLE orders (id int, item text, qty int);
 INSERT INTO orders VALUES (1, 'apple', 3), (2, 'pear', 5);`}
       />
       <p>In a second terminal:</p>
@@ -86,45 +86,23 @@ cd 2-python && source .venv/bin/activate && python live.py`}
 cd 3-node && node live.mjs`}
       />
 
-      <h2>5. A durable sink into Postgres</h2>
-      <p>No key needed. It keeps a Postgres table equal to <code>orders</code>, with each batch and its checkpoint in one transaction.</p>
-      <Code lang="shell" code={`bash 4-sinks/postgres.sh`} />
-      <p>In another terminal, change <code>orders</code> in psql, then look at the target:</p>
-      <Code
-        lang="shell"
-        code={`psql postgres://postgres@localhost:15432/postgres -c "SELECT row, count FROM mz_rows ORDER BY row"
-psql postgres://postgres@localhost:15432/postgres -c "SELECT checkpoint FROM mz_checkpoints"`}
-      />
+      <h2>5. Keep a Valkey hash in step with orders</h2>
       <p>
-        Stop the sink with Ctrl+C, change a row, and start it again. It resumes from its checkpoint without a new
-        snapshot, and the epoch goes up by one. Start a second copy while the first runs: the first one stops with{" "}
-        <code>Fenced</code>.
+        No key needed. The SDK's Valkey example keeps the hash <code>orders</code> equal to the table, keyed by{" "}
+        <code>id</code>:
       </p>
-
-      <h2>6. A search sink into turbopuffer</h2>
-      <Code
-        lang="sql"
-        code={`CREATE TABLE articles (id int, title text, body text) WITH (RETAIN HISTORY = FOR '1h');
-INSERT INTO articles VALUES
-  (1, 'Cats', 'A cat sleeps on a sunny windowsill.'),
-  (2, 'Rain', 'A dog splashes through puddles.'),
-  (3, 'Markets', 'Stock markets rose after earnings.');`}
-      />
-      <Code
-        lang="shell"
-        code={`export TURBOPUFFER_API_KEY=...
-bash 4-sinks/turbopuffer.sh sink
-
-# in a second terminal, with the same key
-bash 4-sinks/turbopuffer.sh search "a kitten resting in the sun"`}
-      />
+      <Code lang="shell" code={`bash 5-valkey/valkey.sh`} />
+      <p>In another terminal, change <code>orders</code> in psql, then look at the hash:</p>
+      <Code lang="shell" code={`docker exec valkey-sdk-demo valkey-cli HGETALL orders`} />
       <p>
-        The cat article comes first, though no word matches. Update or delete a row and search again. Stop the sink,
-        change a row, and start it again: it resumes without embedding everything again. Your namespaces are named{" "}
-        <code>&lt;your user&gt;-sdk-demo__*</code>. Delete them in the turbopuffer console when you are done.
+        Each batch is applied in one <code>MULTI</code>, so a reader sees all of a timestamp's changes or none. Stop it
+        with Ctrl+C, change a row, and start it again. It loads a new snapshot into <code>orders:loading</code> and
+        swaps it in with one <code>RENAME</code>, so readers keep the old contents until the new ones are complete.
       </p>
+      <p>One connection of the example, from the snapshot to each later batch:</p>
+      <Code {...valkeyCode} />
 
-      <h2>7. Run the SDK's own tests</h2>
+      <h2>6. Run the SDK's own tests</h2>
       <p>Everything that needs no server:</p>
       <Code lang="shell" code={`cd .sdk/misc/materialize-sdk && cargo test`} />
       <p>The Rust tests against your Materialize:</p>
@@ -136,13 +114,18 @@ export MATERIALIZE_SYSTEM_URL=postgres://mz_system@localhost:26877/materialize
 cargo test -p materialize-sdk --tests -- --ignored --skip before_a_restart --skip after_a_restart`}
       />
 
-      <h2>8. Clean up</h2>
+      <h2>7. Clean up</h2>
       <Code lang="shell" code={`bash setup/stop.sh`} />
+
+      <p className="small muted">
+        The durable sinks into Postgres and turbopuffer are parked. They still run on the full stack: see{" "}
+        <a href="#/try-sinks">Run the sinks on your laptop</a>.
+      </p>
 
       <div className="callout">
         <strong>Want to change the SDK itself?</strong>
         <p>
-          Work in a full checkout of the <a href={BRANCH_URL}>sdk-preview branch</a>. Its{" "}
+          Work in a full checkout of the <a href={BRANCH_URL}>sdk-beta branch</a>. Its{" "}
           <code>misc/materialize-sdk/README.md</code> explains the layout and the tests.
         </p>
       </div>

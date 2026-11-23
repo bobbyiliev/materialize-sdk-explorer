@@ -520,6 +520,15 @@
       "expect": {"outputs": [[], []], "finished": true}
     },
     {
+      "name": "a resume at UP TO ends with nothing to release",
+      "input": {
+        "start": {"kind": "resume", "frontier": "10"},
+        "steps": [{"message": "progress", "frontier": "9"}, "finish"],
+        "up_to": "10"
+      },
+      "expect": {"outputs": [[], []], "finished": true}
+    },
+    {
       "name": "the end after an early release continues from it",
       "input": {
         "start": {"kind": "resume", "frontier": "10"},

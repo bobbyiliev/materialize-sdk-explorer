@@ -1,4 +1,4 @@
-import type { Checkpoint } from "../core/sdk";
+import type { Checkpoint } from "../core/parked";
 import type { CheckpointAttempt, DurableWorker, SimTarget, SinkKind } from "../sim/durable";
 import type { SimMaterialize } from "../sim/materialize";
 import { Term, Ts } from "./Term";

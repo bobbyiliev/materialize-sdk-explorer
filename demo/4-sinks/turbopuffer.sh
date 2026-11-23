@@ -6,9 +6,11 @@
 #
 #   bash turbopuffer.sh sink                      # run the sink
 #   bash turbopuffer.sh search "a kitten resting" # search, in a second terminal
+# Parked with the scope change: it runs the frozen full stack, which
+# `bash setup/get-sdk.sh parked` checks out into demo/.sdk-parked.
 set -euo pipefail
 : "${TURBOPUFFER_API_KEY:?set TURBOPUFFER_API_KEY to a turbopuffer API key}"
-cd "$(dirname "$0")/../.sdk/misc/materialize-sdk"
+cd "$(dirname "$0")/../.sdk-parked/misc/materialize-sdk"
 export MATERIALIZE_URL="host=localhost port=26875 user=materialize"
 export SOURCE="${SOURCE:-materialize.public.articles}" KEY="${KEY:-id}" EMBED="${EMBED:-body}" FULL_TEXT="${FULL_TEXT:-body}"
 export NAME="${NAME:-$(whoami)-sdk-demo}"

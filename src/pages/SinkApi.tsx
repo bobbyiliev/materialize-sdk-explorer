@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Code } from "../components/Code";
-import { excerpt } from "../lib/source";
+import { parked } from "../lib/source";
 
 export function SinkApi() {
-  const trait = excerpt("rust/src/sink.rs", "pub trait Sink: Send", "}");
-  const request = excerpt("rust/src/sink.rs", "pub enum WriteRequest<'a>", "}");
-  const turbopuffer = excerpt("turbopuffer/src/sink.rs", "impl Sink for TurbopufferSink", "}", false);
-  const postgres = excerpt("rust/examples/postgres_sink.rs", "impl Sink for Postgres", "}", false);
-  const setup = excerpt("turbopuffer/examples/search.rs", "let mut sink = TurbopufferSink::new", "durable.run(&materialize, tls)", false);
+  const trait = parked.excerpt("rust/src/sink.rs", "pub trait Sink: Send", "}");
+  const request = parked.excerpt("rust/src/sink.rs", "pub enum WriteRequest<'a>", "}");
+  const turbopuffer = parked.excerpt("turbopuffer/src/sink.rs", "impl Sink for TurbopufferSink", "}", false);
+  const postgres = parked.excerpt("rust/examples/postgres_sink.rs", "impl Sink for Postgres", "}", false);
+  const setup = parked.excerpt("turbopuffer/examples/search.rs", "let mut sink = TurbopufferSink::new", "durable.run(&materialize, tls)", false);
   const [tab, setTab] = useState<"turbopuffer" | "postgres">("turbopuffer");
 
   return (

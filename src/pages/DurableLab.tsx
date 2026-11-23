@@ -11,8 +11,8 @@ import {
 } from "../components/DurableViz";
 import { Term, Ts } from "../components/Term";
 import { useFollow } from "../components/Wire";
-import type { Checkpoint } from "../core/sdk";
-import { excerpt } from "../lib/source";
+import type { Checkpoint } from "../core/parked";
+import { parked } from "../lib/source";
 import { COMMIT_INTERVAL_TICKS, DurableWorker, SimTarget, setup, type SinkKind, type Step, type TargetEvent } from "../sim/durable";
 import { SimMaterialize } from "../sim/materialize";
 
@@ -616,7 +616,7 @@ export function DurableLab() {
       <p>
         The worker in this lab follows <code>DurableSink::stream</code> step by step. Here is the real one:
       </p>
-      <Code {...codeOf(excerpt("rust/src/durable.rs", "async fn stream<T>(", "    }"))} maxHeight={520} />
+      <Code {...codeOf(parked.excerpt("rust/src/durable.rs", "async fn stream<T>(", "    }"))} maxHeight={520} />
     </>
   );
 }

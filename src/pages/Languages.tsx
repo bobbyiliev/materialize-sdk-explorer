@@ -79,14 +79,14 @@ export function Languages() {
         <div className="card">
           <h3 style={{ marginTop: 0 }}>One core</h3>
           <p className="small">
-            Decoding, batching, checkpoints, SQL, and error rules exist once, in Rust. A binding only passes strings in
+            Decoding, batching, SQL, and error rules exist once, in Rust. A binding only passes strings in
             and out: the core's calls take and return the same JSON the test cases use.
           </p>
         </div>
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Shared test cases</h3>
           <p className="small">
-            241 cases in JSON, written by hand from the design. The core runs them natively, and each package runs them
+            Cases in JSON, written by hand from the design. The core runs them natively, and each package runs them
             again through its own binding. <a href="#/conformance">Run them here.</a>
           </p>
         </div>
@@ -101,8 +101,8 @@ export function Languages() {
 
       <h2>What each package writes by hand</h2>
       <p>
-        Only the transport over its driver, the idiomatic API (iterators in Python, async iterators in Node), and its
-        sinks. Compare the three transports:
+        Only the transport over its driver and the idiomatic API (iterators in Python, async iterators in Node).
+        Compare the three transports:
       </p>
       <ul>
         <li>

@@ -13,32 +13,11 @@ interface Layer {
 
 const LAYERS: Layer[] = [
   {
-    name: "Your app or your sink",
-    short: "a loop over events, or a Sink with load and write",
-    owns: [
-      "What to do with each batch: render it, cache it, index it, write it.",
-      "For a sink: how the target stores rows and a checkpoint, behind one conditional write.",
-    ],
-    not: "Nothing about progress rows, AS OF, retries, or fencing.",
-    files: [
-      ["turbopuffer/src/sink.rs", "the turbopuffer sink"],
-      ["rust/examples/postgres_sink.rs", "the Postgres sink example"],
-    ],
-  },
-  {
-    name: "Durable loop",
-    short: "DurableSink: checkpoints, fencing, resume, snapshots, retries",
-    owns: [
-      "Takes the checkpoint over at start, which fences any older worker.",
-      "Starts with a snapshot, or resumes from the checkpoint's frontier.",
-      "Writes each batch with its checkpoint, settles lost responses, and retries with backoff.",
-      "Checks the object's identity on every reconnect, and sweeps old generations after a snapshot.",
-    ],
-    not: "It asks the core for every checkpoint and every decision about a failed write.",
-    files: [
-      ["rust/src/durable.rs", "DurableSink"],
-      ["rust/src/sink.rs", "the Sink trait"],
-    ],
+    name: "Your app",
+    short: "a loop over events",
+    owns: ["What to do with each batch: render it, cache it, sync it to a target such as Valkey."],
+    not: "Nothing about progress rows, AS OF, or which errors to retry.",
+    files: [["rust/examples/valkey.rs", "the Valkey example"]],
   },
   {
     name: "Transport, per language",
@@ -61,13 +40,13 @@ const LAYERS: Layer[] = [
     owns: [
       "The SQL: SUBSCRIBE by catalog id, DECLARE, FETCH, and the AS OF F − 1 arithmetic, in one function.",
       "Decoding rows, and releasing a batch only when a progress row closes it.",
-      "Checkpoints: their exact text, take-overs, commits, snapshots, and why a conditional write failed.",
+      "The catalog checks before a resume: the object's identity, its history, and indexes that limit it.",
       "Classifying every error by SQLSTATE, message, and phase.",
     ],
     not: "It never opens a connection. It takes rows in a function call and returns events, SQL, and decisions.",
     files: [
       ["core/src/batch.rs", "batches"],
-      ["core/src/checkpoint.rs", "checkpoints"],
+      ["core/src/catalog.rs", "catalog checks"],
       ["core/src/classify.rs", "errors"],
       ["core/src/statement.rs", "SQL"],
     ],
@@ -82,7 +61,7 @@ const LAYERS: Layer[] = [
 ];
 
 export function Architecture() {
-  const [selected, setSelected] = useState(3);
+  const [selected, setSelected] = useState(2);
   const layer = LAYERS[selected];
   const statement = excerpt("core/src/statement.rs", "pub fn sql(&self, start: Start)", "    }");
   return (

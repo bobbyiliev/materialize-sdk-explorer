@@ -8,7 +8,7 @@ publish = false
 [workspace]
 
 [dependencies]
-# setup/get-sdk.sh checks the sdk-preview branch out here.
+# setup/get-sdk.sh checks the sdk-beta branch out here.
 materialize-sdk = { path = "../.sdk/misc/materialize-sdk/rust" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tokio-postgres = "0.7"

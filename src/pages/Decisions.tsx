@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DESIGN_DOC_URL, DESIGN_FOLLOWUP_PR } from "../lib/source";
+import { DESIGN_DOC_URL, SCOPE_UPDATE_PR } from "../lib/source";
 
 interface Decision {
   title: string;
@@ -7,9 +7,17 @@ interface Decision {
   why: string;
   not?: string;
   area: "shape" | "correctness" | "sinks" | "operations";
+  /** Belongs to the sink framework, parked with the scope update. */
+  parked?: boolean;
 }
 
 const DECISIONS: Decision[] = [
+  {
+    area: "shape",
+    title: "The beta covers live subscriptions and small syncs",
+    chose: "Live subscriptions in Rust, Python, and Node, with a new snapshot on each reconnect and at-least-once delivery. The sink framework, checkpoints, and durable mode are parked.",
+    why: "Every SUBSCRIBE result passes through environmentd, so sinks built on SUBSCRIBE put their whole load there, and it does not scale out with them.",
+  },
   {
     area: "shape",
     title: "One protocol core in Rust, with no I/O",
@@ -26,10 +34,10 @@ const DECISIONS: Decision[] = [
   },
   {
     area: "correctness",
-    title: "A durable sink reads one table, source, or materialized view",
-    chose: "Durable sinks run SUBSCRIBE <object>, the objects CREATE SINK accepts. Live streams, which never resume, accept any query.",
+    title: "A resume reads one table, source, or materialized view",
+    chose: "A resume runs SUBSCRIBE <object>, the objects CREATE SINK accepts. Live streams, which take a new snapshot on each reconnect, accept any query.",
     why: "Only the plain object form skips the snapshot on resume. A query rehydrates its dataflow and re-reads its snapshot every time. It also keeps the move to durable subscriptions a transport change, and the SDK never splices user SQL.",
-    not: "Accepting any SQL string. A sink that needs a filter or a join reads a materialized view that computes it.",
+    not: "Accepting any SQL string. A consumer that needs a filter or a join reads a materialized view that computes it.",
   },
   {
     area: "correctness",
@@ -41,18 +49,21 @@ const DECISIONS: Decision[] = [
   {
     area: "correctness",
     title: "The checkpoint lives in the target, behind a compare-and-set",
+    parked: true,
     chose: "A checkpoint holds the epoch, generation, frontier, fingerprints, and any snapshot in progress. It encodes to the same text every time, and a sink stores and compares that text without reading it.",
     why: "Writing the data and the checkpoint in one transaction gives exactly-once state. The compare-and-set makes a stale worker's write fail instead of overwriting a newer one.",
   },
   {
     area: "correctness",
     title: "Every start takes the next epoch",
+    parked: true,
     chose: "A worker's start is a conditional write that raises the epoch. An older worker learns it was fenced from its next failed checkpoint write, and stops.",
     why: "Without the fence, a second copy of a sink overwrites the first one's progress during a deploy or a failover.",
   },
   {
     area: "correctness",
     title: "A required sink_id",
+    parked: true,
     chose: "Every durable sink names its checkpoint, like a consumer group id.",
     why: "A default, such as a class name, would give two deployments one checkpoint, and they would fence each other.",
   },
@@ -72,24 +83,28 @@ const DECISIONS: Decision[] = [
   {
     area: "operations",
     title: "commit_interval is time, not progress messages",
+    parked: true,
     chose: "The least time between two commits that carry no changes. A batch with changes always commits.",
     why: "Progress cadence is not a unit users can reason about.",
   },
   {
     area: "sinks",
     title: "A generation counter in the checkpoint",
+    parked: true,
     chose: "Each new snapshot raises the generation with a conditional write before it starts. Rows carry it, and a sweep removes older generations when a snapshot completes.",
     why: "A retry can get the same AS OF, and a swapped object can have an older one, so the AS OF cannot name a snapshot.",
   },
   {
     area: "sinks",
     title: "turbopuffer: tombstones, timestamp conditions, and new namespaces per snapshot",
+    parked: true,
     chose: "A delete writes a tombstone. Every write is conditional on a newer mz_timestamp. A new snapshot goes into new namespaces, and readers switch when it completes.",
     why: "Without transactions, a plain delete lets a replayed or stale upsert bring a key back, and an in-place snapshot lets a stale worker recreate a key that was deleted before it.",
   },
   {
     area: "sinks",
     title: "A duplicate key is rejected, not a crash",
+    parked: true,
     chose: "Key violation rows are rejected by default and logged without row data. The target keeps the key's previous value.",
     why: "This matches Materialize's own Kafka and Iceberg sinks, and a crash would repeat on every restart.",
   },
@@ -139,12 +154,8 @@ const ALTERNATIVES = [
 const OPEN = [
   ["The name", "Is “Materialize SDK” right? Decide before the first publish.", "Product"],
   ["Subscribing by id", "Is SUBSCRIBE [u123 AS name] a supported contract? It makes the identity check race-free.", "Database"],
-  ["Object swaps", "A swap stops the sink by default. Can deploy tooling confirm the old and new objects match, so the new snapshot can be skipped?", "Deploy tooling, Database"],
-  ["History before durable subscriptions", "Durable mode needs RETAIN HISTORY, which is in private preview. Does it leave preview first, or does durable mode ship only where it is enabled?", "Product, Database"],
-  ["turbopuffer visibility", "The guarantee is convergence. Do search users need a consistent view before the sink catches up?", "DevEx"],
-  ["turbopuffer tombstones", "Tombstones are kept forever by default. Is the storage cost acceptable, and what grace period should a sweep use?", "DevEx"],
-  ["Fencing during one long write", "A fenced worker learns at its next checkpoint write. How should a single long write learn sooner?", "DevEx"],
-  ["Schema changes", "A changed output stops the sink. Should added columns be accepted?", "DevEx"],
+  ["Object swaps", "A swap stops a resume by default. Can deploy tooling confirm the old and new objects match, so the new snapshot can be skipped?", "Deploy tooling, Database"],
+  ["Schema changes", "A changed output stops a resume. Should added columns be accepted?", "DevEx"],
   ["Repository home", "Should the packages move to their own repository, keeping the core and tests next to the server?", "DevEx"],
   ["Egress cost", "What does a large snapshot cost a customer, and is a sizing guide needed?", "Product"],
 ];
@@ -155,8 +166,8 @@ const ASKS = [
   "A size check while a replica collects a subscribe batch, as peeks do, so an oversized batch fails before it runs the replica out of memory.",
   "Server-side chunking of the data between two progress rows, so a snapshot larger than max_result_size can be delivered.",
   "Durable subscriptions.",
-  "Snapshot elision for a projection and filter, so sinks could accept them later.",
-  "Subscribe errors that do not poison the stream, so a sink can dead-letter a bad row.",
+  "Snapshot elision for a projection and filter, so a resume could accept them later.",
+  "Subscribe errors that do not poison the stream, so a consumer can skip a bad row.",
   "A stable WebSocket SUBSCRIBE, for browsers and functions.",
   "Upsert key validation for SUBSCRIBE, or inferred keys in the catalog.",
   "RETAIN HISTORY out of private preview, unless durable subscriptions land first.",
@@ -172,8 +183,8 @@ export function Decisions() {
       <h1>Design decisions</h1>
       <p className="page-lead">
         The choices that shape the SDK, why they were made, and what was not chosen. The full reasoning is in the{" "}
-        <a href={DESIGN_DOC_URL}>design doc</a>, with a <a href={DESIGN_FOLLOWUP_PR}>follow-up</a> that aligns it with
-        the prototype.
+        <a href={DESIGN_DOC_URL}>design doc</a>, with <a href={SCOPE_UPDATE_PR}>the scope update</a> that narrows it to
+        the beta. Decisions marked <em>Parked</em> belong to the sink framework, and stay as the record of that design.
       </p>
 
       <div className="segmented" style={{ marginBottom: 16, flexWrap: "wrap" }}>
@@ -186,7 +197,7 @@ export function Decisions() {
       <div className="grid two">
         {DECISIONS.filter((d) => area === "all" || d.area === area).map((d) => (
           <div className="card" key={d.title}>
-            <span className="badge accent">{AREAS[d.area]}</span>
+            <span className="badge accent">{AREAS[d.area]}</span> {d.parked && <span className="badge">Parked</span>}
             <h3 style={{ margin: "8px 0 6px" }}>{d.title}</h3>
             <p className="small" style={{ margin: "0 0 6px" }}>
               {d.chose}
@@ -216,7 +227,10 @@ export function Decisions() {
       </div>
 
       <h2>Open questions</h2>
-      <p>None of these blocks the prototype, because the design picks a safe default for each.</p>
+      <p>
+        None of these blocks the beta, because the design picks a safe default for each. The questions about sinks,
+        fencing, and turbopuffer are parked with them.
+      </p>
       <div className="table-wrap">
         <table className="data">
           <thead>

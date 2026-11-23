@@ -176,11 +176,14 @@ impl Batch {
     /// state of each key. Keys are ordered by their cells as text, with `NULL`
     /// first.
     ///
-    /// Each change keeps its timestamp. A key with a [`Change::KeyViolation`]
-    /// anywhere in the batch yields its latest violation: the upsert envelope
-    /// reads each timestamp on its own, so a later change to a key that is not
-    /// unique can be a delete while other rows with that key remain. The diff
-    /// envelope has no key, so its updates are returned unchanged.
+    /// Each change keeps its timestamp, and a [`Change::KeyViolation`] counts
+    /// as a change like any other, so the target ends in the same state however
+    /// the updates were split into batches. The diff envelope has no key, so its
+    /// updates are returned unchanged.
+    ///
+    /// NOTE: after a violation, later changes to that key can be wrong: the
+    /// upsert envelope reads each timestamp on its own, so a delete can arrive
+    /// while other rows with the key remain.
     pub fn into_latest_by_key(self) -> Vec<Update> {
         let mut latest: BTreeMap<Row, Update> = BTreeMap::new();
         let mut unkeyed = Vec::new();
@@ -189,12 +192,7 @@ impl Batch {
                 Change::Upsert { key, .. }
                 | Change::Delete { key }
                 | Change::KeyViolation { key } => {
-                    let violated = latest
-                        .get(key)
-                        .is_some_and(|kept| matches!(kept.change, Change::KeyViolation { .. }));
-                    if !violated || matches!(update.change, Change::KeyViolation { .. }) {
-                        latest.insert(key.clone(), update);
-                    }
+                    latest.insert(key.clone(), update);
                 }
                 Change::Diff { .. } => unkeyed.push(update),
             }
@@ -1037,7 +1035,7 @@ mod tests {
     }
 
     #[test]
-    fn latest_by_key_keeps_a_key_violation() {
+    fn latest_by_key_replaces_a_key_violation_with_a_later_change() {
         let violation = Update {
             timestamp: 10,
             change: Change::KeyViolation {
@@ -1046,10 +1044,10 @@ mod tests {
         };
         let mut b = resume(10);
         progress(&mut b, 9);
-        update(&mut b, violation.clone());
+        update(&mut b, violation);
         update(&mut b, delete(11, "k"));
         let latest = batch(progress(&mut b, 12)).into_latest_by_key();
-        assert_eq!(latest, [violation]);
+        assert_eq!(latest, [delete(11, "k")]);
     }
 
     #[test]

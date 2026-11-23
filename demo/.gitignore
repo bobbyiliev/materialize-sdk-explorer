@@ -2,3 +2,4 @@
 target/
 .venv/
 node_modules/
+.sdk-parked/
