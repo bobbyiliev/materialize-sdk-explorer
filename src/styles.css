@@ -2049,3 +2049,29 @@ svg.timeline {
     transition: none !important;
   }
 }
+
+/* Batch flow comparison */
+
+.flow-step {
+  font: 12px var(--sans);
+  fill: var(--fg);
+}
+
+.flow-bracket {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.flow-cost {
+  font: italic 12px var(--sans);
+  fill: currentColor;
+}
+
+.flow-cost-bad {
+  color: var(--warn-text);
+}
+
+.flow-cost-ok {
+  color: var(--ok-text);
+}

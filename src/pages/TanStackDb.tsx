@@ -1,3 +1,4 @@
+import { BatchFlow } from "../components/BatchFlow";
 import { Code } from "../components/Code";
 import { githubUrl } from "../lib/source";
 
@@ -68,6 +69,15 @@ export function TanStackDb() {
         <p>The code below has not been built or run. It shows the shape of the write loop.</p>
       </div>
 
+      <h2>Compared with the console today</h2>
+      <p>
+        The console's <a href={`${CONSOLE}/SubscribeManager.ts`}>SubscribeManager</a> rebuilds the whole keyed set at
+        each closed timestamp, and <a href={`${CONSOLE}/subscribeCollection.ts`}>subscribeCollection</a> diffs that set
+        against the collection to find the changes. Both steps cost the size of the whole set. With closed batches from
+        the SDK, each step costs the size of the batch.
+      </p>
+      <BatchFlow />
+
       <h2>One closed batch, one transaction</h2>
       <p>The SDK hands out two kinds of event, and each maps to one collection transaction:</p>
       <dl className="kv" style={{ maxWidth: 760 }}>
@@ -95,14 +105,6 @@ export function TanStackDb() {
         A key with more than one row at a timestamp breaks the one-row-per-key assumption. The upsert envelope reports
         that as a key violation, and a UI collection needs a policy for it: drop the key, as the{" "}
         <a href={githubUrl("rust/examples/valkey.rs")}>Valkey example</a> does, or fail the whole collection.
-      </p>
-
-      <h2>Compared with the console today</h2>
-      <p>
-        The console's <a href={`${CONSOLE}/SubscribeManager.ts`}>SubscribeManager</a> rebuilds the whole keyed set at
-        each closed timestamp, and <a href={`${CONSOLE}/subscribeCollection.ts`}>subscribeCollection</a> diffs that set
-        against the collection to find the changes. Both steps cost the size of the whole set. With closed batches from
-        the SDK, each step costs the size of the batch.
       </p>
 
       <h2>What a browser still needs</h2>
