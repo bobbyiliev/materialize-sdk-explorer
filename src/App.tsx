@@ -16,6 +16,7 @@ import { ParkedTryIt } from "./pages/ParkedTryIt";
 import { Problem } from "./pages/Problem";
 import { ProtocolLab } from "./pages/ProtocolLab";
 import { SinkApi } from "./pages/SinkApi";
+import { TanStackDb } from "./pages/TanStackDb";
 import { TryIt } from "./pages/TryIt";
 
 export interface Route {
@@ -36,6 +37,7 @@ export const ROUTES: Route[] = [
   { path: "errors", title: "Errors lab", group: "How it works", tag: "live", component: Errors },
   { path: "languages", title: "Rust, Python, Node", group: "Build with it", component: Languages },
   { path: "conformance", title: "Conformance tests", group: "Build with it", tag: "live", component: Conformance },
+  { path: "tanstack-db", title: "Feeding TanStack DB", group: "Build with it", tag: "sketch", component: TanStackDb },
   { path: "decisions", title: "Design decisions", group: "Go deeper", component: Decisions },
   { path: "glossary", title: "Glossary", group: "Go deeper", component: Glossary },
   { path: "try", title: "Run it on your laptop", group: "Your turn", component: TryIt },
